@@ -9,7 +9,7 @@ import LocationScreen from './screens/LocationPickerScreen';
 import Dashboard from './screens/Dashboard'; 
 import PantryScreen from './screens/PantryScreen';
 import AddItemScreen from './screens/AddItemScreen';
-import BarcodeScannerScreen from './screens/BarcodeScannerScreen';
+import BarcodeScannerScreen from './screens/Barcode_Scanner';
 
 const Stack = createNativeStackNavigator();
 

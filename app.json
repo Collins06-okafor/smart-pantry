@@ -6,8 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "jsEngine": "jsc",
-    "newArchEnabled": false,
+    "jsEngine": "js engine: hermes",
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -49,5 +49,15 @@
         "projectId": "9badee3d-342e-44ce-95a9-c2ef964c708e"
       }
     }
-  }
+    
+  },
+  "plugins": [
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access camera."
+        }
+      ]
+    ]
+
 }

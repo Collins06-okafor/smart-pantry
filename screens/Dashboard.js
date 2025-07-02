@@ -31,7 +31,7 @@ export default function Dashboard({ navigation }) {
       // Fetch user profile and pantry items in parallel
       const [profileResult, pantryResult] = await Promise.all([
         supabase
-          .from('profiles')
+          .from('profile')
           .select('name')
           .eq('id', user.id)
           .single(),
