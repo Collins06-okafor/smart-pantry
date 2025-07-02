@@ -35,26 +35,25 @@ export default function Signup({ navigation }) {
       console.warn('Location permission or fetch failed, using fallback location');
     }
 
-    const { error } = await supabase.from('profiles').insert([
-      {
-        id: user.id,
-        email,
-        name,
-        surname,
-        latitude,
-        longitude,
-        location,
-        city,
-        created_at: new Date().toISOString(),
-        is_sharing: false,
-        last_active: new Date().toISOString(),
-      },
-    ]);
+    const { data: insertData, error: insertError } = await supabase.from('profile').insert([{
+    id: user.id,
+    email,
+    name,
+    surname,
+    latitude,
+    longitude,
+    location,
+    city,
+    created_at: new Date().toISOString(),
+    is_sharing: false,
+    last_active: new Date().toISOString(),
+    }]);
 
-    if (error) {
-      console.error('Profile insert error:', error);
-      Alert.alert('Profile Error', error.message);
+    if (insertError) {
+    console.error('Profile insert error:', insertError.message);
+    Alert.alert('Profile Error', insertError.message);
     }
+
   };
 
   const handleSignup = async () => {
@@ -63,7 +62,18 @@ export default function Signup({ navigation }) {
       return;
     }
 
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+            data: {
+            name,
+            surname,
+            }
+        }
+        });
+
+
 
         if (error) {
         Alert.alert('Signup Error', error.message);

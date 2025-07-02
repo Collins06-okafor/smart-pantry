@@ -6,7 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "jsEngine": "jsc",
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -16,6 +17,10 @@
       "supportsTablet": true,
       "config": {
         "googleMapsApiKey": "AIzaSyCZdKRukNvtA6YzdyQnaDaIGoqVop0aDhg"
+      },
+      "bundleIdentifier": "com.collins06.smartpantry",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -28,10 +33,21 @@
         "googleMaps": {
           "apiKey": "AIzaSyCZdKRukNvtA6YzdyQnaDaIGoqVop0aDhg"
         }
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-barcode-scanner"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9badee3d-342e-44ce-95a9-c2ef964c708e"
+      }
     }
   }
 }
