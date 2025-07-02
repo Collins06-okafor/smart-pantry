@@ -8,11 +8,13 @@
     "userInterfaceStyle": "light",
     "jsEngine": "js engine: hermes",
     "newArchEnabled": true,
+    
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    
     "ios": {
       "supportsTablet": true,
       "config": {
@@ -36,28 +38,31 @@
         "googleMaps": {
           "apiKey": "AIzaSyCZdKRukNvtA6YzdyQnaDaIGoqVop0aDhg"
         }
-      }
+      },
+      "package": "com.collins06.smartpantry"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-barcode-scanner"
-    ],
+    [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan barcodes."
+        }
+      ]    ],
     "extra": {
       "eas": {
         "projectId": "9badee3d-342e-44ce-95a9-c2ef964c708e"
       }
     }
-    
   },
   "plugins": [
-      [
-        "expo-barcode-scanner",
-        {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to access camera."
-        }
-      ]
+    [
+      "expo-barcode-scanner",
+      {
+        "cameraPermission": "Allow $(PRODUCT_NAME) to access camera."
+      }
     ]
-
+  ]
 }

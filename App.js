@@ -9,7 +9,7 @@ import LocationScreen from './screens/LocationPickerScreen';
 import Dashboard from './screens/Dashboard'; 
 import PantryScreen from './screens/PantryScreen';
 import AddItemScreen from './screens/AddItemScreen';
-import BarcodeScannerScreen from './screens/Barcode_Scanner';
+import EnhancedBarcodeScanner from './screens/EnhancedBarcodeScanner'; // Assuming this is your scanner screen
 
 const Stack = createNativeStackNavigator();
 
@@ -57,11 +57,10 @@ export default function App() {
           options={{ title: 'Add Item' }}
         />
         <Stack.Screen 
-          name="BarcodeScanner" 
-          component={BarcodeScannerScreen}
+          name="Scan" 
+          component={EnhancedBarcodeScanner}
           options={{ headerShown: false }}
         />
-
       </Stack.Navigator>
     </NavigationContainer>
   );
