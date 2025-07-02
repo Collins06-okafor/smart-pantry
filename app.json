@@ -29,14 +29,14 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCZdKRukNvtA6YzdyQnaDaIGoqVop0aDhg"
         }
-      },
-      "permissions": [
-        "android.permission.CAMERA"
-      ]
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
