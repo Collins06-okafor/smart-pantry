@@ -6,8 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "jsEngine": "js engine: hermes",
-    "newArchEnabled": true,
+    "jsEngine": "hermes",
+    "newArchEnabled": false,
     
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -30,10 +30,6 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "permissions": [
-        "android.permission.CAMERA"
-      ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyCZdKRukNvtA6YzdyQnaDaIGoqVop0aDhg"
@@ -44,25 +40,13 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": [
-    [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan barcodes."
-        }
-      ]    ],
     "extra": {
       "eas": {
         "projectId": "9badee3d-342e-44ce-95a9-c2ef964c708e"
       }
-    }
-  },
-  "plugins": [
-    [
-      "expo-barcode-scanner",
-      {
-        "cameraPermission": "Allow $(PRODUCT_NAME) to access camera."
-      }
+    },
+    "plugins": [
+      "expo-dev-client"
     ]
-  ]
+  }
 }

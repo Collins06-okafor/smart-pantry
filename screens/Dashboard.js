@@ -1,34 +1,48 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  ScrollView,
+  RefreshControl 
+} from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
+import * as Notifications from 'expo-notifications';
+import { registerForPushNotificationsAsync } from '../lib/notifications';
 
 export default function Dashboard({ navigation }) {
   const [name, setName] = useState('');
   const [pantryCount, setPantryCount] = useState(0);
   const [expiringSoon, setExpiringSoon] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
+    registerForPushNotificationsAsync();
   }, []);
 
+  // Refresh data when screen comes back into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchDashboardData();
+    }, [])
+  );
+
   const fetchDashboardData = async () => {
-    console.log('🔍 Dashboard: fetchDashboardData started');
-    setLoading(true);
+    if (!refreshing) setLoading(true);
     setError(null);
-    
+
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
-      console.log('🔍 Dashboard: User fetch result:', { user: !!user, userError });
-
       if (!user || userError) {
-        console.warn('User not found:', userError?.message);
         setError('User not authenticated');
         return;
       }
 
-      // Fetch user profile and pantry items in parallel
       const [profileResult, pantryResult] = await Promise.all([
         supabase
           .from('profile')
@@ -41,95 +55,64 @@ export default function Dashboard({ navigation }) {
           .eq('user_id', user.id)
       ]);
 
-      const { data: profile, error: profileError } = profileResult;
+      const { data: profile } = profileResult;
       const { data: pantryItems, error: pantryError } = pantryResult;
 
-      console.log('🔍 Dashboard: Results:', { profile, profileError, pantryItems, pantryError });
-
-      // Handle profile data
-      if (profileError) {
-        console.warn('Profile fetch error:', profileError.message);
-      } else if (profile?.name) {
+      if (profile?.name) {
         setName(profile.name.split(' ')[0]);
       }
 
-      // Handle pantry data with comprehensive safety checks
       if (pantryError) {
-        console.error('Pantry fetch error:', pantryError.message);
         setError('Failed to load pantry data');
-        setPantryCount(0);
-        setExpiringSoon([]);
         return;
       }
 
-      // Ensure we always have a valid array
       const safeItems = Array.isArray(pantryItems) ? pantryItems : [];
-      console.log('🔍 Dashboard: Safe items:', { 
-        count: safeItems.length,
-        isArray: Array.isArray(safeItems)
-      });
-      
-      // Update pantry count
       setPantryCount(safeItems.length);
 
-      // Calculate expiring items with additional safety
       const expiring = calculateExpiringSoon(safeItems);
       setExpiringSoon(expiring);
 
+      // 🔔 Schedule push notifications
+      expiring.forEach(item => {
+        scheduleExpiryNotification(item.item_name, item.expiration_date);
+      });
+
     } catch (err) {
-      console.error('🚨 Dashboard: Unexpected error:', err);
       setError('An unexpected error occurred');
-      setPantryCount(0);
-      setExpiringSoon([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchDashboardData();
+  }, []);
+
   const calculateExpiringSoon = (items) => {
-    // Triple check for array safety
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      console.log('🔍 Dashboard: No items to check for expiration');
-      return [];
-    }
-
     const today = new Date();
-    const threeDaysFromNow = new Date(today.getTime() + (3 * 24 * 60 * 60 * 1000));
+    const threeDaysFromNow = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
 
-    try {
-      const expiring = items.filter(item => {
-        // Comprehensive item validation
-        if (!item || typeof item !== 'object') {
-          console.log('🔍 Dashboard: Invalid item object:', item);
-          return false;
-        }
+    return items.filter(item => {
+      if (!item?.expiration_date) return false;
+      const expDate = new Date(item.expiration_date);
+      return expDate >= today && expDate <= threeDaysFromNow;
+    });
+  };
 
-        if (!item.expiration_date) {
-          console.log('🔍 Dashboard: Item missing expiration_date:', item.item_name);
-          return false;
-        }
-
-        const expDate = new Date(item.expiration_date);
-        if (isNaN(expDate.getTime())) {
-          console.log('🔍 Dashboard: Invalid expiration date:', item.expiration_date);
-          return false;
-        }
-
-        const willExpire = expDate >= today && expDate <= threeDaysFromNow;
-        if (willExpire) {
-          console.log('🔍 Dashboard: Item expiring soon:', item.item_name, expDate);
-        }
-        
-        return willExpire;
-      });
-
-      console.log('🔍 Dashboard: Items expiring soon:', expiring.length);
-      return Array.isArray(expiring) ? expiring : [];
-      
-    } catch (filterError) {
-      console.error('🚨 Dashboard: Error filtering expiring items:', filterError);
-      return [];
-    }
+  const scheduleExpiryNotification = async (itemName, date) => {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '🥫 Pantry Alert!',
+        body: `${itemName} expires on ${date}`,
+        sound: 'default',
+      },
+      trigger: {
+        seconds: 5, // Replace with a real time trigger for production
+      },
+    });
   };
 
   if (loading) {
@@ -152,10 +135,30 @@ export default function Dashboard({ navigation }) {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView 
+      contentContainerStyle={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={['#00C897']}
+        />
+      }
+    >
       <Text style={styles.header}>Hi, {name || 'there'}! 👋</Text>
       <Text style={styles.subText}>You have {pantryCount} item(s) in your pantry.</Text>
       <Text style={styles.subText}>🕑 {expiringSoon.length} item(s) expiring soon!</Text>
+
+      {expiringSoon.length > 0 && (
+        <View style={styles.warningBox}>
+          <Text style={styles.warningTitle}>⚠️ Items Expiring Soon</Text>
+          {expiringSoon.map(item => (
+            <Text key={item.id} style={styles.warningItem}>
+              • {item.item_name} (expires {item.expiration_date})
+            </Text>
+          ))}
+        </View>
+      )}
 
       <TouchableOpacity style={styles.button} onPress={() => navigation.navigate('AddItem')}>
         <Text style={styles.buttonText}>➕ Add Pantry Item</Text>
@@ -164,6 +167,12 @@ export default function Dashboard({ navigation }) {
       <TouchableOpacity style={styles.button} onPress={() => navigation.navigate('Pantry')}>
         <Text style={styles.buttonText}>📦 View Pantry</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button} onPress={() => navigation.navigate('Recipes')}>
+        <Text style={styles.buttonText}>📖 View Recipes</Text>
+      </TouchableOpacity>
+
+
     </ScrollView>
   );
 }
@@ -202,6 +211,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  warningBox: {
+    backgroundColor: '#FFF4E5',
+    borderColor: '#FFA726',
+    borderWidth: 1,
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 20,
+    width: '100%',
+  },
+  warningTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#D84315',
+    marginBottom: 5,
+  },
+  warningItem: {
+    fontSize: 14,
+    color: '#BF360C',
   },
   error: {
     color: 'red',
