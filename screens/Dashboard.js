@@ -5,7 +5,8 @@ import {
   StyleSheet, 
   TouchableOpacity, 
   ScrollView,
-  RefreshControl 
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
@@ -25,7 +26,6 @@ export default function Dashboard({ navigation }) {
     registerForPushNotificationsAsync();
   }, []);
 
-  // Refresh data when screen comes back into focus
   useFocusEffect(
     useCallback(() => {
       fetchDashboardData();
@@ -73,7 +73,6 @@ export default function Dashboard({ navigation }) {
       const expiring = calculateExpiringSoon(safeItems);
       setExpiringSoon(expiring);
 
-      // 🔔 Schedule push notifications
       expiring.forEach(item => {
         scheduleExpiryNotification(item.item_name, item.expiration_date);
       });
@@ -110,7 +109,7 @@ export default function Dashboard({ navigation }) {
         sound: 'default',
       },
       trigger: {
-        seconds: 5, // Replace with a real time trigger for production
+        seconds: 5,
       },
     });
   };
@@ -118,7 +117,8 @@ export default function Dashboard({ navigation }) {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <Text>Loading dashboard...</Text>
+        <ActivityIndicator size="large" color="#00C897" />
+        <Text style={{ marginTop: 10 }}>Loading dashboard...</Text>
       </View>
     );
   }
@@ -169,7 +169,18 @@ export default function Dashboard({ navigation }) {
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.button} onPress={() => navigation.navigate('Recipes')}>
-        <Text style={styles.buttonText}>📖 View Recipes</Text>
+        <Text style={styles.buttonText}>🍽️ View Recipes</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button} onPress={() => navigation.navigate('Share')}>
+        <Text style={styles.buttonText}>🤝 Nearby Sharing</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.button} 
+        onPress={() => navigation.navigate('Profile')}
+        >
+        <Text style={styles.buttonText}>⚙️ Profile & Settings</Text>
       </TouchableOpacity>
 
 
@@ -180,72 +191,58 @@ export default function Dashboard({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     padding: 20,
-    paddingTop: 60,
-    alignItems: 'center',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    paddingTop: 50,
   },
   header: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 10,
   },
   subText: {
     fontSize: 16,
-    marginBottom: 8,
+    marginBottom: 5,
+  },
+  warningBox: {
+    backgroundColor: '#fff3cd',
+    padding: 10,
+    borderRadius: 8,
+    marginVertical: 10,
+  },
+  warningTitle: {
+    fontWeight: 'bold',
+    color: '#856404',
+    marginBottom: 4,
+  },
+  warningItem: {
+    color: '#856404',
   },
   button: {
     backgroundColor: '#00C897',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 25,
-    marginTop: 20,
-    width: '80%',
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 15,
     alignItems: 'center',
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 16,
+    color: 'white',
     fontWeight: 'bold',
   },
-  warningBox: {
-    backgroundColor: '#FFF4E5',
-    borderColor: '#FFA726',
-    borderWidth: 1,
-    padding: 15,
-    borderRadius: 8,
-    marginTop: 20,
-    width: '100%',
-  },
-  warningTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#D84315',
-    marginBottom: 5,
-  },
-  warningItem: {
-    fontSize: 14,
-    color: '#BF360C',
-  },
-  error: {
-    color: 'red',
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   retryButton: {
+    marginTop: 10,
+    padding: 10,
     backgroundColor: '#00C897',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 20,
+    borderRadius: 6,
   },
   retryText: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+  },
+  error: {
+    color: 'red',
+    textAlign: 'center',
   },
 });

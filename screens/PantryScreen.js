@@ -10,6 +10,8 @@ import {
   Alert,
   Modal,
   TextInput,
+  SafeAreaView,
+  StatusBar,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
@@ -18,7 +20,9 @@ export default function PantryScreen({ navigation }) {
   const [pantryItems, setPantryItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
+  // Edit Modal State
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editForm, setEditForm] = useState({
     id: null,
@@ -27,8 +31,12 @@ export default function PantryScreen({ navigation }) {
     expiration_date: '',
   });
 
+  // Share Modal State
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [selectedItemForShare, setSelectedItemForShare] = useState(null);
+
   useEffect(() => {
-    fetchPantryItems();
+    initializeScreen();
   }, []);
 
   useFocusEffect(
@@ -36,6 +44,18 @@ export default function PantryScreen({ navigation }) {
       fetchPantryItems();
     }, [])
   );
+
+  const initializeScreen = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      setCurrentUser(user);
+      if (user) {
+        await fetchPantryItems();
+      }
+    } catch (error) {
+      console.error('Error initializing screen:', error);
+    }
+  };
 
   const fetchPantryItems = async () => {
     if (!refreshing) setLoading(true);
@@ -92,39 +112,30 @@ export default function PantryScreen({ navigation }) {
   };
 
   const deleteItem = async (itemId) => {
-  console.log('Attempting to delete item with ID:', itemId);
-  console.log('Item ID type:', typeof itemId);
-  
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    console.log('Current user:', user?.id);
-    console.log('User ID type:', typeof user?.id);
-    
-    if (!user?.id) {
-      Alert.alert("Error", "User not authenticated");
-      return;
-    }
-    
-    const { data, error } = await supabase
-      .from('pantry_items')
-      .delete()
-      .eq('id', itemId)
-      .eq('user_id', user.id);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        Alert.alert("Error", "User not authenticated");
+        return;
+      }
 
-    console.log('Delete response:', { data, error });
+      const { error } = await supabase
+        .from('pantry_items')
+        .delete()
+        .eq('id', itemId)
+        .eq('user_id', user.id);
 
-    if (error) {
-      console.error('Delete error details:', error);
-      Alert.alert("Error", `Failed to delete item: ${error.message}`);
-    } else {
-      console.log('Delete successful, refreshing data');
-      fetchPantryItems();
+      if (error) {
+        Alert.alert("Error", `Failed to delete item: ${error.message}`);
+      } else {
+        Alert.alert("Success", "Item deleted successfully");
+        await fetchPantryItems();
+      }
+    } catch (err) {
+      console.error('Delete error:', err);
+      Alert.alert("Error", "An unexpected error occurred.");
     }
-  } catch (err) {
-    console.error('Unexpected delete error:', err);
-    Alert.alert("Error", "An unexpected error occurred.");
-  }
-};
+  };
 
   const handleEdit = (item) => {
     setEditForm({
@@ -142,99 +153,180 @@ export default function PantryScreen({ navigation }) {
   };
 
   const saveEdit = async () => {
-  console.log('Attempting to save edit:', editForm);
-  console.log('Edit form ID type:', typeof editForm.id);
-  
-  if (!editForm.item_name || !editForm.quantity || !editForm.expiration_date) {
-    Alert.alert("Missing Fields", "Please fill in all fields.");
-    return;
-  }
-
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    console.log('Current user:', user?.id);
-    console.log('User ID type:', typeof user?.id);
-    
-    if (!user?.id) {
-      Alert.alert("Error", "User not authenticated");
+    if (!editForm.item_name.trim() || !editForm.quantity.trim() || !editForm.expiration_date.trim()) {
+      Alert.alert("Missing Fields", "Please fill in all fields.");
       return;
     }
-    
-    const updateData = {
-      item_name: editForm.item_name,
-      quantity: parseInt(editForm.quantity) || 0,
-      expiration_date: editForm.expiration_date,
-    };
-    
-    console.log('Update data:', updateData);
-    console.log('Updating item with ID:', editForm.id);
 
-    const { data, error } = await supabase
-      .from('pantry_items')
-      .update(updateData)
-      .eq('id', editForm.id)
-      .eq('user_id', user.id)
-      .select();
-
-    console.log('Update response:', { data, error });
-
-    if (error) {
-      console.error('Update error details:', error);
-      Alert.alert("Error", `Failed to update item: ${error.message}`);
-    } else {
-      console.log('Update successful, refreshing data');
-      fetchPantryItems();
-      cancelEdit();
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(editForm.expiration_date)) {
+      Alert.alert("Invalid Date", "Please use YYYY-MM-DD format for the expiration date.");
+      return;
     }
-  } catch (err) {
-    console.error('Unexpected update error:', err);
-    Alert.alert("Error", "An unexpected error occurred.");
-  }
-};
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        Alert.alert("Error", "User not authenticated");
+        return;
+      }
+
+      const updateData = {
+        item_name: editForm.item_name.trim(),
+        quantity: parseInt(editForm.quantity) || 0,
+        expiration_date: editForm.expiration_date,
+      };
+
+      const { error } = await supabase
+        .from('pantry_items')
+        .update(updateData)
+        .eq('id', editForm.id)
+        .eq('user_id', user.id);
+
+      if (error) {
+        Alert.alert("Error", `Failed to update item: ${error.message}`);
+      } else {
+        Alert.alert("Success", "Item updated successfully");
+        await fetchPantryItems();
+        cancelEdit();
+      }
+    } catch (err) {
+      console.error('Update error:', err);
+      Alert.alert("Error", "An unexpected error occurred.");
+    }
+  };
+
+  const handleShare = (item) => {
+    setSelectedItemForShare(item);
+    setShareModalVisible(true);
+  };
+
+  const shareItem = async () => {
+    if (!currentUser || !selectedItemForShare) return;
+    
+    try {
+      // Check if item is already shared
+      const { data: existingShare, error: checkError } = await supabase
+        .from('shared_items')
+        .select('id')
+        .eq('item_id', selectedItemForShare.id)
+        .eq('user_id', currentUser.id)
+        .single();
+
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError;
+      }
+
+      if (existingShare) {
+        Alert.alert("Already Shared", "This item is already being shared.");
+        setShareModalVisible(false);
+        return;
+      }
+
+      const { error } = await supabase
+        .from('shared_items')
+        .insert({
+          item_id: selectedItemForShare.id,
+          user_id: currentUser.id,
+          status: 'available',
+          offered_at: new Date().toISOString()
+        });
+
+      if (error) {
+        Alert.alert('Error', `Failed to share item: ${error.message}`);
+      } else {
+        Alert.alert('Success', 'Item shared with your neighbors!');
+        setShareModalVisible(false);
+        setSelectedItemForShare(null);
+      }
+    } catch (err) {
+      console.error('Share error:', err);
+      Alert.alert('Error', 'An unexpected error occurred while sharing the item.');
+    }
+  };
+
+  const cancelShare = () => {
+    setShareModalVisible(false);
+    setSelectedItemForShare(null);
+  };
+
+  const getExpirationStatus = (dateString) => {
+    try {
+      const expiration = new Date(dateString);
+      const today = new Date();
+      const diffTime = expiration - today;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays < 0) return { status: 'expired', days: Math.abs(diffDays) };
+      if (diffDays <= 3) return { status: 'expiring', days: diffDays };
+      return { status: 'fresh', days: diffDays };
+    } catch {
+      return { status: 'unknown', days: 0 };
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date)) return dateString;
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return dateString;
+    }
+  };
 
   const renderItem = ({ item }) => {
-    const formatDate = (dateString) => {
-      if (!dateString) return 'N/A';
-      try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        });
-      } catch {
-        return dateString;
-      }
-    };
-
-    const isExpiringSoon = (dateString) => {
-      try {
-        const expiration = new Date(dateString);
-        const today = new Date();
-        const threeDays = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
-        return expiration <= threeDays;
-      } catch {
-        return false;
-      }
-    };
-
-    const isExpiring = isExpiringSoon(item.expiration_date);
+    const expirationStatus = getExpirationStatus(item.expiration_date);
+    const isExpired = expirationStatus.status === 'expired';
+    const isExpiring = expirationStatus.status === 'expiring';
 
     return (
-      <View style={[styles.item, isExpiring && styles.itemExpiring]}>
+      <View style={[
+        styles.item,
+        isExpired && styles.itemExpired,
+        isExpiring && styles.itemExpiring
+      ]}>
         <View style={styles.itemContent}>
           <Text style={styles.name}>{item.item_name}</Text>
           <Text style={styles.detail}>Quantity: {item.quantity}</Text>
-          <Text style={[styles.detail, isExpiring && styles.expiringText]}>
+          <Text style={[
+            styles.detail,
+            isExpired && styles.expiredText,
+            isExpiring && styles.expiringText
+          ]}>
             Expires: {formatDate(item.expiration_date)}
           </Text>
-          {isExpiring && <Text style={styles.warningText}>⚠️ Expiring Soon!</Text>}
+          {isExpired && (
+            <Text style={styles.expiredWarning}>❌ Expired {expirationStatus.days} days ago</Text>
+          )}
+          {isExpiring && (
+            <Text style={styles.warningText}>⚠️ Expires in {expirationStatus.days} day(s)</Text>
+          )}
         </View>
+        
         <View style={styles.itemActions}>
-          <TouchableOpacity style={styles.editButton} onPress={() => handleEdit(item)}>
+          <TouchableOpacity 
+            style={styles.shareButton} 
+            onPress={() => handleShare(item)}
+          >
+            <Text style={styles.shareButtonText}>📤</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.editButton} 
+            onPress={() => handleEdit(item)}
+          >
             <Text style={styles.editButtonText}>✏️</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.deleteButton} onPress={() => handleDelete(item)}>
+          <TouchableOpacity 
+            style={styles.deleteButton} 
+            onPress={() => handleDelete(item)}
+          >
             <Text style={styles.deleteButtonText}>🗑️</Text>
           </TouchableOpacity>
         </View>
@@ -242,47 +334,67 @@ export default function PantryScreen({ navigation }) {
     );
   };
 
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <Text style={styles.title}>My Pantry</Text>
+      <Text style={styles.subtitle}>
+        {pantryItems.length} {pantryItems.length === 1 ? 'item' : 'items'}
+      </Text>
+    </View>
+  );
+
+  const renderEmptyState = () => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyIcon}>🥫</Text>
+      <Text style={styles.emptyTitle}>Your pantry is empty</Text>
+      <Text style={styles.emptyText}>Start adding items to track your food inventory</Text>
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={() => navigation.navigate('AddItem')}
+      >
+        <Text style={styles.addButtonText}>➕ Add First Item</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#00C897" />
-        <Text style={styles.loadingText}>Loading your pantry...</Text>
-      </View>
-    );
-  }
-
-  if (!pantryItems.length) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.empty}>Your pantry is empty. Add some items!</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => navigation.navigate('AddItem')}
-        >
-          <Text style={styles.addButtonText}>➕ Add Item</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#00C897" />
+          <Text style={styles.loadingText}>Loading your pantry...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>My Pantry ({pantryItems.length} items)</Text>
-      <FlatList
-        data={pantryItems}
-        keyExtractor={(item) => item.id?.toString()}
-        renderItem={renderItem}
-        contentContainerStyle={{ paddingBottom: 30 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#00C897']}
-          />
-        }
-      />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+      
+      {pantryItems.length === 0 ? (
+        renderEmptyState()
+      ) : (
+        <FlatList
+          data={pantryItems}
+          keyExtractor={(item) => item.id?.toString()}
+          renderItem={renderItem}
+          ListHeaderComponent={renderHeader}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#00C897']}
+              tintColor="#00C897"
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
-      {/* ✏️ Edit Modal */}
+      {/* Edit Modal */}
       <Modal
         animationType="slide"
         transparent
@@ -298,6 +410,7 @@ export default function PantryScreen({ navigation }) {
               style={styles.input}
               value={editForm.item_name}
               onChangeText={(text) => setEditForm(prev => ({ ...prev, item_name: text }))}
+              placeholder="Enter item name"
             />
 
             <Text style={styles.label}>Quantity</Text>
@@ -306,13 +419,15 @@ export default function PantryScreen({ navigation }) {
               value={editForm.quantity}
               keyboardType="numeric"
               onChangeText={(text) => setEditForm(prev => ({ ...prev, quantity: text }))}
+              placeholder="Enter quantity"
             />
 
-            <Text style={styles.label}>Expiration Date (YYYY-MM-DD)</Text>
+            <Text style={styles.label}>Expiration Date</Text>
             <TextInput
               style={styles.input}
               value={editForm.expiration_date}
               onChangeText={(text) => setEditForm(prev => ({ ...prev, expiration_date: text }))}
+              placeholder="YYYY-MM-DD"
             />
 
             <View style={styles.modalButtons}>
@@ -320,47 +435,109 @@ export default function PantryScreen({ navigation }) {
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveButton} onPress={saveEdit}>
-                <Text style={styles.saveButtonText}>Save</Text>
+                <Text style={styles.saveButtonText}>Save Changes</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </View>
+
+      {/* Share Modal */}
+      <Modal
+        animationType="slide"
+        transparent
+        visible={shareModalVisible}
+        onRequestClose={cancelShare}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Share Item</Text>
+            
+            {selectedItemForShare && (
+              <View style={styles.shareItemPreview}>
+                <Text style={styles.shareItemName}>{selectedItemForShare.item_name}</Text>
+                <Text style={styles.shareItemDetail}>Quantity: {selectedItemForShare.quantity}</Text>
+                <Text style={styles.shareItemDetail}>
+                  Expires: {formatDate(selectedItemForShare.expiration_date)}
+                </Text>
+              </View>
+            )}
+
+            <Text style={styles.shareDescription}>
+              Share this item with your neighbors. They'll be able to see and request it.
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelButton} onPress={cancelShare}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.shareConfirmButton} onPress={shareItem}>
+                <Text style={styles.shareConfirmButtonText}>📤 Share Item</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    padding: 20,
-    backgroundColor: '#f5f5f5'
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
   },
-  centered: { 
-    flex: 1, 
-    justifyContent: 'center', 
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    padding: 20
+    padding: 20,
   },
-  title: { 
-    fontSize: 22, 
-    fontWeight: 'bold', 
-    marginBottom: 15,
-    color: '#333'
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 10,
+  },
+  header: {
+    padding: 20,
+    paddingBottom: 10,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#666',
+  },
+  listContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   item: {
-    backgroundColor: '#e0f2f1',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 10,
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
     borderLeftWidth: 4,
     borderLeftColor: '#00C897',
     flexDirection: 'row',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   itemExpiring: {
-    backgroundColor: '#fff3e0',
+    backgroundColor: '#fff8e1',
     borderLeftColor: '#ff9800',
+  },
+  itemExpired: {
+    backgroundColor: '#ffebee',
+    borderLeftColor: '#f44336',
   },
   itemContent: {
     flex: 1,
@@ -368,33 +545,53 @@ const styles = StyleSheet.create({
   itemActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
-  name: { 
-    fontSize: 16, 
+  name: {
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#333'
+    color: '#333',
+    marginBottom: 4,
   },
-  detail: { 
-    fontSize: 14, 
+  detail: {
+    fontSize: 14,
     color: '#666',
-    marginTop: 4
+    marginBottom: 2,
   },
   expiringText: {
     color: '#ff9800',
-    fontWeight: '600'
+    fontWeight: '600',
+  },
+  expiredText: {
+    color: '#f44336',
+    fontWeight: '600',
   },
   warningText: {
     fontSize: 12,
     color: '#ff9800',
     fontWeight: 'bold',
-    marginTop: 4
+    marginTop: 4,
+  },
+  expiredWarning: {
+    fontSize: 12,
+    color: '#f44336',
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  shareButton: {
+    backgroundColor: '#00C897',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  shareButtonText: {
+    fontSize: 16,
   },
   editButton: {
     backgroundColor: '#2196F3',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
-    marginRight: 8,
   },
   editButtonText: {
     fontSize: 16,
@@ -408,35 +605,47 @@ const styles = StyleSheet.create({
   deleteButtonText: {
     fontSize: 16,
   },
-  empty: {
-    fontSize: 18,
-    textAlign: 'center',
-    color: '#666',
-    marginBottom: 10
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
   },
-  emptySubtext: {
-    fontSize: 14,
+  emptyIcon: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 8,
     textAlign: 'center',
-    color: '#999',
-    marginBottom: 20
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
   },
   addButton: {
     backgroundColor: '#00C897',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
     borderRadius: 25,
+    shadowColor: '#00C897',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   addButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  loadingText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 10
-  },
-  // Modal styles
+  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -446,12 +655,13 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: '#fff',
     borderRadius: 20,
-    padding: 20,
+    padding: 24,
     width: '90%',
     maxWidth: 400,
+    maxHeight: '80%',
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
@@ -460,30 +670,29 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 5,
+    marginBottom: 8,
     color: '#333',
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 10,
+    padding: 14,
     fontSize: 16,
-    marginBottom: 15,
+    marginBottom: 16,
     backgroundColor: '#f9f9f9',
   },
   modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
     marginTop: 20,
   },
   cancelButton: {
     backgroundColor: '#f44336',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 10,
     flex: 1,
-    marginRight: 10,
   },
   cancelButtonText: {
     color: '#fff',
@@ -493,13 +702,49 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: '#00C897',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 10,
     flex: 1,
-    marginLeft: 10,
   },
   saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  shareItemPreview: {
+    backgroundColor: '#f0f0f0',
+    padding: 16,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  shareItemName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  shareItemDetail: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  shareDescription: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  shareConfirmButton: {
+    backgroundColor: '#00C897',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    flex: 1,
+  },
+  shareConfirmButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',

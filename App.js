@@ -10,6 +10,8 @@ import Dashboard from './screens/Dashboard';
 import PantryScreen from './screens/PantryScreen';
 import AddItemScreen from './screens/AddItemScreen';
 import RecipeScreen from './screens/RecipeScreen';
+import ShareScreen from './screens/ShareScreen';
+import ProfileScreen from './screens/ProfileScreen'; // ✅ Import added
 
 const Stack = createNativeStackNavigator();
 
@@ -60,6 +62,15 @@ export default function App() {
           name="Recipes" 
           component={RecipeScreen}
           options={{ title: 'Recipes' }}
+        />
+        <Stack.Screen 
+          name="Share" 
+          component={ShareScreen}
+        />
+        <Stack.Screen 
+          name="Profile" 
+          component={ProfileScreen}
+          options={{ title: 'Profile & Settings' }} // ✅ Screen added
         />
       </Stack.Navigator>
     </NavigationContainer>
