@@ -225,15 +225,49 @@ export default function ProfileScreen() {
         return;
       }
 
-      const { error } = await supabase.auth.resetPasswordForEmail(profile.email);
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(profile.email)) {
+        Alert.alert('Error', 'Invalid email format');
+        return;
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
+        redirectTo: `${window.location.origin}/reset-password`, // For web
+        // For React Native, you might need to use a deep link:
+        // redirectTo: 'yourapp://reset-password',
+      });
+
       if (error) {
-        Alert.alert('Error', error.message);
+        console.error('Password reset error:', error);
+        
+        // Handle specific error types
+        switch (error.message) {
+          case 'For security purposes, you can only request this once every 60 seconds':
+            Alert.alert('Rate Limited', 'Please wait 60 seconds before requesting another password reset.');
+            break;
+          case 'User not found':
+            Alert.alert('Error', 'No account found with this email address.');
+            break;
+          case 'Email not confirmed':
+            Alert.alert('Error', 'Please confirm your email address first.');
+            break;
+          case 'Signup disabled':
+            Alert.alert('Error', 'Password reset is currently disabled.');
+            break;
+          default:
+            Alert.alert('Error', `Failed to send reset email: ${error.message}`);
+        }
       } else {
-        Alert.alert('Password Reset', 'Check your email to reset your password.');
+        Alert.alert(
+          'Password Reset Email Sent', 
+          'Check your email inbox (and spam folder) for the password reset link. The link will expire in 1 hour.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
       console.error('Password reset error:', error);
-      Alert.alert('Error', 'Failed to send password reset email');
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
     }
   };
 

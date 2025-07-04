@@ -76,6 +76,8 @@ export default function ShareScreen({ navigation }) {
 
  const fetchNearbyUsers = async (userId) => {
   try {
+    console.log('Fetching nearby users for:', userId);
+    
     // Get current user's location
     const { data: myProfile, error: profileError } = await supabase
       .from('profile')
@@ -83,8 +85,14 @@ export default function ShareScreen({ navigation }) {
       .eq('id', userId)
       .single();
 
+    console.log('My profile:', myProfile);
+    console.log('Profile error:', profileError);
+
     if (profileError) throw profileError;
-    if (!myProfile.latitude || !myProfile.longitude) return setNearbyUsers([]);
+    if (!myProfile.latitude || !myProfile.longitude) {
+      console.log('No location set for current user');
+      return setNearbyUsers([]);
+    }
 
     // Query users within 10km radius
     const { data, error } = await supabase.rpc('get_nearby_users', {
@@ -94,9 +102,14 @@ export default function ShareScreen({ navigation }) {
       exclude_user_id: userId
     });
 
+    console.log('Nearby users query result:', data);
+    console.log('Nearby users error:', error);
+
     if (error) throw error;
 
-    setNearbyUsers(data.map(u => u.id));
+    const userIds = data.map(u => u.id);
+    console.log('Setting nearby users:', userIds);
+    setNearbyUsers(userIds);
   } catch (err) {
     console.error('Error fetching nearby users:', err);
     setNearbyUsers([]);
