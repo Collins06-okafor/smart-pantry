@@ -11,12 +11,14 @@ import {
   Modal,
   SafeAreaView,
   StatusBar,
-  TextInput,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+
 import { supabase } from '../lib/supabase';
 
-export default function ShareScreen({ navigation }) {
+export default function ShareScreen() {
+  const navigation = useNavigation();
+
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -74,48 +76,47 @@ export default function ShareScreen({ navigation }) {
     refreshAllData().finally(() => setRefreshing(false));
   }, [currentUser, nearbyUsers]);
 
- const fetchNearbyUsers = async (userId) => {
-  try {
-    console.log('Fetching nearby users for:', userId);
-    
-    // Get current user's location
-    const { data: myProfile, error: profileError } = await supabase
-      .from('profile')
-      .select('latitude, longitude')
-      .eq('id', userId)
-      .single();
+  const fetchNearbyUsers = async (userId) => {
+    try {
+      console.log('Fetching nearby users for:', userId);
+      
+      // Get current user's location
+      const { data: myProfile, error: profileError } = await supabase
+        .from('profile')
+        .select('latitude, longitude')
+        .eq('id', userId)
+        .single();
 
-    console.log('My profile:', myProfile);
-    console.log('Profile error:', profileError);
+      console.log('My profile:', myProfile);
+      console.log('Profile error:', profileError);
 
-    if (profileError) throw profileError;
-    if (!myProfile.latitude || !myProfile.longitude) {
-      console.log('No location set for current user');
-      return setNearbyUsers([]);
+      if (profileError) throw profileError;
+      if (!myProfile.latitude || !myProfile.longitude) {
+        console.log('No location set for current user');
+        return setNearbyUsers([]);
+      }
+
+      // Query users within 10km radius
+      const { data, error } = await supabase.rpc('get_nearby_users', {
+        lat: myProfile.latitude,
+        lng: myProfile.longitude,
+        radius: 10000, // 10km in meters
+        exclude_user_id: userId
+      });
+
+      console.log('Nearby users query result:', data);
+      console.log('Nearby users error:', error);
+
+      if (error) throw error;
+
+      const userIds = data.map(u => u.id);
+      console.log('Setting nearby users:', userIds);
+      setNearbyUsers(userIds);
+    } catch (err) {
+      console.error('Error fetching nearby users:', err);
+      setNearbyUsers([]);
     }
-
-    // Query users within 10km radius
-    const { data, error } = await supabase.rpc('get_nearby_users', {
-      lat: myProfile.latitude,
-      lng: myProfile.longitude,
-      radius: 10000, // 10km in meters
-      exclude_user_id: userId
-    });
-
-    console.log('Nearby users query result:', data);
-    console.log('Nearby users error:', error);
-
-    if (error) throw error;
-
-    const userIds = data.map(u => u.id);
-    console.log('Setting nearby users:', userIds);
-    setNearbyUsers(userIds);
-  } catch (err) {
-    console.error('Error fetching nearby users:', err);
-    setNearbyUsers([]);
-  }
-};
-
+  };
 
   const fetchSharedItems = async (userIds) => {
     if (userIds.length === 0) {
@@ -396,11 +397,11 @@ export default function ShareScreen({ navigation }) {
         </View>
 
         {item.status === 'available' && (
-          <TouchableOpacity 
-            style={styles.requestButton} 
-            onPress={() => requestItem(item.id)}
+          <TouchableOpacity
+            style={{ backgroundColor: '#5a2ca0', padding: 14, borderRadius: 25, marginTop: 20, alignItems: 'center' }}
+            onPress={() => navigation.navigate('RequestFood')}
           >
-            <Text style={styles.requestButtonText}>Request Item</Text>
+            <Text style={{ color: '#fff', fontWeight: 'bold' }}>📢 Request Food</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -469,6 +470,13 @@ export default function ShareScreen({ navigation }) {
           onPress={() => handleShareItem(item)}
         >
           <Text style={styles.shareButtonText}>📤 Share</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={{ backgroundColor: '#5a2ca0', padding: 14, borderRadius: 25, marginTop: 20, alignItems: 'center' }}
+          onPress={() => navigation.navigate('RequestFood')}
+        >
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>📢 Request Food</Text>
         </TouchableOpacity>
       </View>
     );
@@ -581,16 +589,16 @@ export default function ShareScreen({ navigation }) {
         onPress={() => setActiveTab('myshared')}
       >
         <Text style={[styles.tabText, activeTab === 'myshared' && styles.activeTabText]}>
-          My Shared ({mySharedItems.length})
+          My Shares ({mySharedItems.length})
         </Text>
       </TouchableOpacity>
-      
+
       <TouchableOpacity
         style={[styles.tab, activeTab === 'mypantry' && styles.activeTab]}
         onPress={() => setActiveTab('mypantry')}
       >
         <Text style={[styles.tabText, activeTab === 'mypantry' && styles.activeTabText]}>
-          Share More ({myPantryItems.length})
+          My Pantry ({myPantryItems.length})
         </Text>
       </TouchableOpacity>
     </View>
@@ -598,59 +606,43 @@ export default function ShareScreen({ navigation }) {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#00C897" />
-          <Text style={styles.loadingText}>Loading sharing options...</Text>
-        </View>
-      </SafeAreaView>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#00C897" />
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
-      
-      <View style={styles.header}>
-        <Text style={styles.title}>Community Sharing</Text>
-        <Text style={styles.subtitle}>Share food, reduce waste</Text>
-      </View>
-
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar backgroundColor="#0B3D91" barStyle="light-content" />
       {renderTabs()}
       {renderTabContent()}
 
-      {/* Share Confirmation Modal */}
+      {/* Share confirmation modal */}
       <Modal
-        animationType="slide"
-        transparent
         visible={showShareModal}
+        animationType="slide"
+        transparent={true}
         onRequestClose={cancelShare}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Share Item</Text>
-            
-            {selectedItemForShare && (
-              <View style={styles.shareItemPreview}>
-                <Text style={styles.shareItemName}>{selectedItemForShare.item_name}</Text>
-                <Text style={styles.shareItemDetail}>Quantity: {selectedItemForShare.quantity}</Text>
-                <Text style={styles.shareItemDetail}>
-                  Expires: {formatDate(selectedItemForShare.expiration_date)}
-                </Text>
-              </View>
-            )}
-
-            <Text style={styles.shareDescription}>
-              Share this item with your neighbors. They'll be able to see and request it. You can stop sharing at any time.
+            <Text style={styles.modalMessage}>
+              Are you sure you want to share "{selectedItemForShare?.item_name}" with your neighbors?
             </Text>
-
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelButton} onPress={cancelShare}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={cancelShare}
+              >
+                <Text style={styles.modalButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmButton} onPress={confirmShare}>
-                <Text style={styles.confirmButtonText}>📤 Share Item</Text>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.confirmButton]}
+                onPress={confirmShare}
+              >
+                <Text style={styles.modalButtonText}>Share</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -661,248 +653,183 @@ export default function ShareScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f0f4f8',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 10,
-  },
-  header: {
-    padding: 20,
-    paddingBottom: 10,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    marginHorizontal: 20,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: '#0B3D91',
   },
   tab: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 8,
+    paddingVertical: 14,
     alignItems: 'center',
+    borderBottomWidth: 3,
+    borderBottomColor: 'transparent',
   },
   activeTab: {
-    backgroundColor: '#00C897',
+    borderBottomColor: '#00C897',
+    backgroundColor: '#142c6d',
   },
   tabText: {
-    fontSize: 12,
+    color: '#fff',
     fontWeight: '600',
-    color: '#666',
-    textAlign: 'center',
   },
   activeTabText: {
-    color: '#fff',
+    color: '#00C897',
   },
   listContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+    padding: 14,
   },
   itemCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 16,
     marginBottom: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowRadius: 5,
     elevation: 3,
   },
   itemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   itemName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    flex: 1,
+    fontWeight: '700',
+    color: '#0B3D91',
   },
   statusBadge: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
-    marginLeft: 8,
+    borderRadius: 15,
+    justifyContent: 'center',
   },
   statusText: {
     color: '#fff',
+    fontWeight: '700',
     fontSize: 12,
-    fontWeight: '600',
   },
   itemDetails: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   detailText: {
     fontSize: 14,
-    color: '#666',
+    color: '#444',
     marginBottom: 4,
   },
   expiringText: {
-    color: '#ff9800',
-    fontWeight: '600',
+    color: '#d9534f',
+    fontWeight: '700',
   },
   requestButton: {
     backgroundColor: '#00C897',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
   },
   requestButtonText: {
     color: '#fff',
-    fontSize: 16,
     fontWeight: 'bold',
+    fontSize: 16,
   },
   removeButton: {
-    backgroundColor: '#f44336',
+    backgroundColor: '#d9534f',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
   },
   removeButtonText: {
     color: '#fff',
-    fontSize: 16,
     fontWeight: 'bold',
+    fontSize: 16,
   },
   shareButton: {
-    backgroundColor: '#2196F3',
+    backgroundColor: '#007bff',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 25,
     alignItems: 'center',
+    marginTop: 8,
   },
   shareButtonText: {
     color: '#fff',
-    fontSize: 16,
     fontWeight: 'bold',
+    fontSize: 16,
   },
   emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
-    minHeight: 200,
+    marginTop: 60,
+    paddingHorizontal: 20,
   },
   emptyIcon: {
-    fontSize: 48,
-    marginBottom: 16,
+    fontSize: 50,
+    marginBottom: 14,
   },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
-    textAlign: 'center',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 6,
+    color: '#0B3D91',
   },
   emptyText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 16,
+    color: '#777',
     textAlign: 'center',
-    lineHeight: 20,
   },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'center',
-    alignItems: 'center',
+    paddingHorizontal: 30,
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
+    borderRadius: 12,
+    padding: 20,
+    elevation: 10,
   },
   modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 12,
+    color: '#0B3D91',
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 16,
     marginBottom: 20,
-    textAlign: 'center',
     color: '#333',
-  },
-  shareItemPreview: {
-    backgroundColor: '#f0f0f0',
-    padding: 16,
-    borderRadius: 10,
-    marginBottom: 16,
-  },
-  shareItemName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  shareItemDetail: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 2,
-  },
-  shareDescription: {
-    fontSize: 14,
-    color: '#666',
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 10,
   },
   modalButtons: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
+    justifyContent: 'space-around',
+  },
+  modalButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 25,
+    minWidth: 100,
+    alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#f44336',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    flex: 1,
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    backgroundColor: '#ddd',
   },
   confirmButton: {
     backgroundColor: '#00C897',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    flex: 1,
   },
-  confirmButtonText: {
-    color: '#fff',
+  modalButtonText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontWeight: '600',
+    color: '#fff',
   },
 });

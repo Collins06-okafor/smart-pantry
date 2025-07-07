@@ -1,4 +1,4 @@
-// MainTabs.js
+// MainTabs.js - Only tab screens
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import Dashboard from './Dashboard';
@@ -7,7 +7,6 @@ import RecipeScreen from './RecipeScreen';
 import ShareScreen from './ShareScreen';
 import ProfileScreen from './ProfileScreen';
 import { Ionicons } from '@expo/vector-icons';
-
 
 const Tab = createBottomTabNavigator();
 
@@ -34,6 +33,7 @@ export default function MainTabs() {
         },
         tabBarActiveTintColor: '#00C897',
         tabBarInactiveTintColor: 'gray',
+        headerShown: false, // Hide headers for tab screens
       })}
     >
       <Tab.Screen name="Dashboard" component={Dashboard} />

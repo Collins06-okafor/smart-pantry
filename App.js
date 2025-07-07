@@ -1,64 +1,77 @@
-import React, { useEffect } from 'react';
+// App.js - Auth check and navigation entry point
+
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { supabase } from './lib/supabase';
+import { View, Text, ActivityIndicator } from 'react-native';
 
-import LandingPage from './screens/LandingPage';
-import Login from './screens/Login';
-import Signup from './screens/Signup';
-import LocationScreen from './screens/LocationPickerScreen';
-import AddItemScreen from './screens/AddItemScreen';
-import RequestFoodScreen from './screens/RequestFoodScreen';
+// Screens
+import LandingScreen from './screens/LandingPage';
+import LoginScreen from './screens/Login';
+import SignUpScreen from './screens/Signup';
+import MainTabsStack from './screens/MainTabsStack'; // ✅ Using Stack wrapper
+import RequestFoodScreen from './screens/RequestFoodScreen'; // Import your RequestFood component
+const Stack = createStackNavigator();
 
-import MainTabs from './screens/MainTabs';
 
-const Stack = createNativeStackNavigator();
+// Loading UI
+const LoadingScreen = () => (
+  <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+    <ActivityIndicator size="large" color="#00C897" />
+    <Text style={{ marginTop: 10 }}>Loading...</Text>
+  </View>
+);
+
+// Auth flow wrapper (Landing → Login → Signup)
+const AuthScreens = () => {
+  const [currentScreen, setCurrentScreen] = useState('Landing');
+
+  if (currentScreen === 'Landing') {
+    return <LandingScreen onNavigate={setCurrentScreen} />;
+  } else if (currentScreen === 'Login') {
+    return <LoginScreen onNavigate={setCurrentScreen} />;
+  } else if (currentScreen === 'SignUp') {
+    return <SignUpScreen onNavigate={setCurrentScreen} />;
+  }
+
+  return <LandingScreen onNavigate={setCurrentScreen} />;
+};
 
 export default function App() {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    console.log("Using JS engine:", global.HermesInternal ? "Hermes" : "JSC");
+    // Check user session on app start
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    // Subscribe to auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  if (loading) return <LoadingScreen />;
 
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Landing">
-        <Stack.Screen
-          name="Landing"
-          component={LandingPage}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Login"
-          component={Login}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Signup"
-          component={Signup}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen
-          name="Location"
-          component={LocationScreen}
-          options={{ title: 'Share Location' }}
-        />
-        {/* Use MainTabs instead of Dashboard */}
-        <Stack.Screen
-          name="MainTabs"
-          component={MainTabs}
-          options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="AddItem" 
-          component={AddItemScreen}
-          options={{ title: 'Add Item' }}
-        />
 
-        <Stack.Screen
-  name="RequestFood"
-  component={RequestFoodScreen}
-  options={{ title: 'Request Food' }}
-/>
-      </Stack.Navigator>
+      {user ? (
+        // ✅ Authenticated user: show tab + stack screens
+        <MainTabsStack />
+      ) : (
+        // 🔐 Not logged in: show auth flow
+        <AuthScreens />
+        
+      )}
+       
     </NavigationContainer>
   );
 }
