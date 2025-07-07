@@ -26,7 +26,6 @@ export default function ProfileScreen() {
     address: '',
     latitude: '',
     longitude: '',
-    bio: '',
     phone_number: '',
     is_sharing: true,
     expiry_alerts_enabled: true,
@@ -173,7 +172,7 @@ export default function ProfileScreen() {
             },
             {
               text: 'Go to Home',
-              onPress: () => navigation.navigate('Home'),
+              onPress: () => navigation.navigate('Dashboard'),
             },
           ]
         );
@@ -391,14 +390,6 @@ export default function ProfileScreen() {
         </Text>
       </TouchableOpacity>
 
-      <TextInput
-        style={[styles.input, styles.bioInput]}
-        placeholder="Bio"
-        value={profile.bio}
-        multiline
-        onChangeText={(val) => setProfile({ ...profile, bio: val })}
-      />
-
       <Text style={styles.sectionTitle}>⚙️ Settings</Text>
 
       <View style={styles.switchContainer}>
@@ -420,16 +411,6 @@ export default function ProfileScreen() {
           onValueChange={(val) => setProfile({ ...profile, expiry_alerts_enabled: val })}
           trackColor={{ false: '#767577', true: '#00A86B' }}
           thumbColor={profile.expiry_alerts_enabled ? '#fff' : '#f4f3f4'}
-        />
-      </View>
-
-      <View style={styles.switchContainer}>
-        <Text style={styles.switchLabel}>Recipe Suggestions:</Text>
-        <Switch
-          value={profile.recipe_suggestions_enabled}
-          onValueChange={(val) => setProfile({ ...profile, recipe_suggestions_enabled: val })}
-          trackColor={{ false: '#767577', true: '#00A86B' }}
-          thumbColor={profile.recipe_suggestions_enabled ? '#fff' : '#f4f3f4'}
         />
       </View>
 
@@ -499,10 +480,6 @@ const styles = StyleSheet.create({
   disabledInput: {
     backgroundColor: '#f5f5f5',
     color: '#666',
-  },
-  bioInput: {
-    height: 100,
-    textAlignVertical: 'top',
   },
   coordinatesContainer: {
     flexDirection: 'row',

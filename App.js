@@ -13,6 +13,7 @@ import RecipeScreen from './screens/RecipeScreen';
 import ShareScreen from './screens/ShareScreen';
 import ProfileScreen from './screens/ProfileScreen'; // ✅ Import added
 
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {
@@ -72,6 +73,8 @@ export default function App() {
           component={ProfileScreen}
           options={{ title: 'Profile & Settings' }} // ✅ Screen added
         />
+
+
       </Stack.Navigator>
     </NavigationContainer>
   );

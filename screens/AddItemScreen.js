@@ -213,6 +213,7 @@ export default function AddItemScreen({ route, navigation }) {
           >
             <Text style={styles.quickDateButtonText}>1 Month</Text>
           </TouchableOpacity>
+
         </View>
       </View>
     </View>
