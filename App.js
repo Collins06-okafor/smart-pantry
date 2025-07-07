@@ -6,13 +6,10 @@ import LandingPage from './screens/LandingPage';
 import Login from './screens/Login';
 import Signup from './screens/Signup';
 import LocationScreen from './screens/LocationPickerScreen';
-import Dashboard from './screens/Dashboard'; 
-import PantryScreen from './screens/PantryScreen';
 import AddItemScreen from './screens/AddItemScreen';
-import RecipeScreen from './screens/RecipeScreen';
-import ShareScreen from './screens/ShareScreen';
-import ProfileScreen from './screens/ProfileScreen'; // ✅ Import added
+import RequestFoodScreen from './screens/RequestFoodScreen';
 
+import MainTabs from './screens/MainTabs';
 
 const Stack = createNativeStackNavigator();
 
@@ -44,37 +41,23 @@ export default function App() {
           component={LocationScreen}
           options={{ title: 'Share Location' }}
         />
+        {/* Use MainTabs instead of Dashboard */}
         <Stack.Screen
-          name="Dashboard"
-          component={Dashboard}
+          name="MainTabs"
+          component={MainTabs}
           options={{ headerShown: false }}
-        />
-        <Stack.Screen 
-          name="Pantry" 
-          component={PantryScreen}
-          options={{ title: 'My Pantry' }}
         />
         <Stack.Screen 
           name="AddItem" 
           component={AddItemScreen}
           options={{ title: 'Add Item' }}
         />
-        <Stack.Screen 
-          name="Recipes" 
-          component={RecipeScreen}
-          options={{ title: 'Recipes' }}
-        />
-        <Stack.Screen 
-          name="Share" 
-          component={ShareScreen}
-        />
-        <Stack.Screen 
-          name="Profile" 
-          component={ProfileScreen}
-          options={{ title: 'Profile & Settings' }} // ✅ Screen added
-        />
 
-
+        <Stack.Screen
+  name="RequestFood"
+  component={RequestFoodScreen}
+  options={{ title: 'Request Food' }}
+/>
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -12,35 +12,15 @@ import {
   TextInput,
   SafeAreaView,
   StatusBar,
-  Switch,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
-import { 
-  useSmartNotifications, 
-  handlePantryUpdate,
-  handleNewItemAdded,
-  handleItemShared,
-  getNotificationInsights,
-  NotificationSettingsManager
-} from '../lib/notifications';
-
-import { 
-  registerForPushNotificationsAsync,
-  initializeNotificationChannels
-} from '../lib/notifications';
-
 
 export default function PantryScreen({ navigation }) {
   const [pantryItems, setPantryItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [notificationInsights, setNotificationInsights] = useState(null);
-
-  // Smart notifications hook
-  const { notificationStats, scheduleNotifications, updatePreferences } = useSmartNotifications(pantryItems);
-
 
   // Edit Modal State
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -55,16 +35,6 @@ export default function PantryScreen({ navigation }) {
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [selectedItemForShare, setSelectedItemForShare] = useState(null);
 
-  // Notification Settings Modal
-  const [notificationSettingsVisible, setNotificationSettingsVisible] = useState(false);
-  const [notificationPreferences, setNotificationPreferences] = useState({
-    enableExpiryAlerts: true,
-    enableMealSuggestions: true,
-    enableSharingReminders: true,
-    alertDaysBefore: 3,
-    preferredNotificationTime: '18:00'
-  });
-
   useEffect(() => {
     initializeScreen();
   }, []);
@@ -72,41 +42,8 @@ export default function PantryScreen({ navigation }) {
   useFocusEffect(
     useCallback(() => {
       fetchPantryItems();
-      loadNotificationInsights();
     }, [])
   );
-
-  useEffect(() => {
-  const initializeNotifications = async () => {
-    try {
-      await initializeNotificationChannels();
-      const token = await registerForPushNotificationsAsync();
-      if (token) {
-        console.log('Push token registered:', token);
-        // Store token in your backend if needed
-      }
-    } catch (error) {
-      console.error('Error initializing notifications:', error);
-    }
-  };
-
-  useEffect(() => {
-  const fetchInsights = async () => {
-    const effectiveness = await smartNotificationManager.getNotificationEffectiveness();
-    const totalOpened = Object.values(effectiveness).reduce((acc, t) => acc + (t.opened || 0), 0);
-    const totalActed = Object.values(effectiveness).reduce((acc, t) => acc + (t.acted || 0), 0);
-    const actionRate = totalOpened > 0 ? (totalActed / totalOpened) * 100 : 0;
-
-    setNotificationInsights({ effectiveness, actionRate });
-  };
-
-  fetchInsights();
-}, [pantryItems]);
-
-
-  initializeNotifications();
-}, []);
-
 
   const initializeScreen = async () => {
     try {
@@ -114,29 +51,9 @@ export default function PantryScreen({ navigation }) {
       setCurrentUser(user);
       if (user) {
         await fetchPantryItems();
-        await loadNotificationPreferences();
-        await loadNotificationInsights();
       }
     } catch (error) {
       console.error('Error initializing screen:', error);
-    }
-  };
-
-  const loadNotificationPreferences = async () => {
-    try {
-      const preferences = await NotificationSettingsManager.getPreferences();
-      setNotificationPreferences(preferences);
-    } catch (error) {
-      console.error('Error loading notification preferences:', error);
-    }
-  };
-
-  const loadNotificationInsights = async () => {
-    try {
-      const insights = await getNotificationInsights();
-      setNotificationInsights(insights);
-    } catch (error) {
-      console.error('Error loading notification insights:', error);
     }
   };
 
@@ -164,10 +81,6 @@ export default function PantryScreen({ navigation }) {
           ? data.filter(item => item && item.item_name)
           : [];
         setPantryItems(validItems);
-        
-        // Update notifications when pantry items change
-        await handlePantryUpdate(validItems);
-        await loadNotificationInsights();
       }
     } catch (err) {
       console.error('Unexpected error:', err);
@@ -245,6 +158,7 @@ export default function PantryScreen({ navigation }) {
       return;
     }
 
+    // Validate date format
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(editForm.expiration_date)) {
       Alert.alert("Invalid Date", "Please use YYYY-MM-DD format for the expiration date.");
@@ -292,6 +206,7 @@ export default function PantryScreen({ navigation }) {
     if (!currentUser || !selectedItemForShare) return;
     
     try {
+      // Check if item is already shared
       const { data: existingShare, error: checkError } = await supabase
         .from('shared_items')
         .select('id')
@@ -322,10 +237,6 @@ export default function PantryScreen({ navigation }) {
         Alert.alert('Error', `Failed to share item: ${error.message}`);
       } else {
         Alert.alert('Success', 'Item shared with your neighbors!');
-        
-        // Handle smart notification for sharing
-        await handleItemShared(selectedItemForShare, pantryItems);
-        
         setShareModalVisible(false);
         setSelectedItemForShare(null);
       }
@@ -338,18 +249,6 @@ export default function PantryScreen({ navigation }) {
   const cancelShare = () => {
     setShareModalVisible(false);
     setSelectedItemForShare(null);
-  };
-
-  const handleNotificationSettingsUpdate = async (newPreferences) => {
-    try {
-      await updatePreferences(newPreferences);
-      setNotificationPreferences(newPreferences);
-      Alert.alert('Success', 'Notification preferences updated!');
-      setNotificationSettingsVisible(false);
-    } catch (error) {
-      console.error('Error updating notification preferences:', error);
-      Alert.alert('Error', 'Failed to update notification preferences.');
-    }
   };
 
   const getExpirationStatus = (dateString) => {
@@ -380,13 +279,6 @@ export default function PantryScreen({ navigation }) {
     } catch {
       return dateString;
     }
-  };
-
-  const getExpiringItemsCount = () => {
-    return pantryItems.filter(item => {
-      const status = getExpirationStatus(item.expiration_date);
-      return status.status === 'expiring' || status.status === 'expired';
-    }).length;
   };
 
   const renderItem = ({ item }) => {
@@ -444,41 +336,10 @@ export default function PantryScreen({ navigation }) {
 
   const renderHeader = () => (
     <View style={styles.header}>
-      <View style={styles.headerTop}>
-        <View>
-          <Text style={styles.title}>Smart Pantry</Text>
-          <Text style={styles.subtitle}>
-            {pantryItems.length} {pantryItems.length === 1 ? 'item' : 'items'}
-          </Text>
-        </View>
-        <TouchableOpacity 
-          style={styles.notificationSettingsButton}
-          onPress={() => setNotificationSettingsVisible(true)}
-        >
-          <Text style={styles.notificationSettingsText}>🔔</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Smart Notifications Dashboard */}
-      {notificationInsights && (
-        <View style={styles.notificationDashboard}>
-          <Text style={styles.dashboardTitle}>📊 Smart Alerts</Text>
-          <View style={styles.dashboardRow}>
-            <View style={styles.dashboardItem}>
-              <Text style={styles.dashboardNumber}>{notificationStats.totalScheduled}</Text>
-              <Text style={styles.dashboardLabel}>Active Alerts</Text>
-            </View>
-            <View style={styles.dashboardItem}>
-              <Text style={styles.dashboardNumber}>{getExpiringItemsCount()}</Text>
-              <Text style={styles.dashboardLabel}>Expiring Soon</Text>
-            </View>
-            <View style={styles.dashboardItem}>
-              <Text style={styles.dashboardNumber}>{Math.round(notificationInsights.effectiveness?.actionRate || 0)}%</Text>
-              <Text style={styles.dashboardLabel}>Action Rate</Text>
-            </View>
-          </View>
-        </View>
-      )}
+      <Text style={styles.title}>My Pantry</Text>
+      <Text style={styles.subtitle}>
+        {pantryItems.length} {pantryItems.length === 1 ? 'item' : 'items'}
+      </Text>
     </View>
   );
 
@@ -486,7 +347,7 @@ export default function PantryScreen({ navigation }) {
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyIcon}>🥫</Text>
       <Text style={styles.emptyTitle}>Your pantry is empty</Text>
-      <Text style={styles.emptyText}>Start adding items to track your food inventory and get smart notifications</Text>
+      <Text style={styles.emptyText}>Start adding items to track your food inventory</Text>
       <TouchableOpacity
         style={styles.addButton}
         onPress={() => navigation.navigate('AddItem')}
@@ -496,87 +357,13 @@ export default function PantryScreen({ navigation }) {
     </View>
   );
 
-  const renderNotificationSettings = () => (
-    <Modal
-      animationType="slide"
-      transparent
-      visible={notificationSettingsVisible}
-      onRequestClose={() => setNotificationSettingsVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>🔔 Notification Settings</Text>
-          
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Expiry Alerts</Text>
-            <Switch
-              value={notificationPreferences.enableExpiryAlerts}
-              onValueChange={(value) => setNotificationPreferences(prev => ({
-                ...prev,
-                enableExpiryAlerts: value
-              }))}
-            />
-          </View>
-          
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Meal Suggestions</Text>
-            <Switch
-              value={notificationPreferences.enableMealSuggestions}
-              onValueChange={(value) => setNotificationPreferences(prev => ({
-                ...prev,
-                enableMealSuggestions: value
-              }))}
-            />
-          </View>
-          
-          <View style={styles.settingRow}>
-            <Text style={styles.settingLabel}>Sharing Reminders</Text>
-            <Switch
-              value={notificationPreferences.enableSharingReminders}
-              onValueChange={(value) => setNotificationPreferences(prev => ({
-                ...prev,
-                enableSharingReminders: value
-              }))}
-            />
-          </View>
-          
-          <Text style={styles.label}>Alert Days Before Expiry</Text>
-          <TextInput
-            style={styles.input}
-            value={String(notificationPreferences.alertDaysBefore)}
-            keyboardType="numeric"
-            onChangeText={(text) => setNotificationPreferences(prev => ({
-              ...prev,
-              alertDaysBefore: parseInt(text) || 3
-            }))}
-          />
-          
-          <View style={styles.modalButtons}>
-            <TouchableOpacity 
-              style={styles.cancelButton} 
-              onPress={() => setNotificationSettingsVisible(false)}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.saveButton} 
-              onPress={() => handleNotificationSettingsUpdate(notificationPreferences)}
-            >
-              <Text style={styles.saveButtonText}>Save Settings</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#00C897" />
-          <Text style={styles.loadingText}>Loading your smart pantry...</Text>
+          <Text style={styles.loadingText}>Loading your pantry...</Text>
         </View>
       </SafeAreaView>
     );
@@ -677,7 +464,7 @@ export default function PantryScreen({ navigation }) {
             )}
 
             <Text style={styles.shareDescription}>
-              Share this item with your neighbors. They'll be able to see and request it. You'll get a notification when someone is interested!
+              Share this item with your neighbors. They'll be able to see and request it.
             </Text>
 
             <View style={styles.modalButtons}>
@@ -691,9 +478,6 @@ export default function PantryScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-
-      {/* Notification Settings Modal */}
-      {renderNotificationSettings()}
     </SafeAreaView>
   );
 }
@@ -718,12 +502,6 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 10,
   },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -733,53 +511,6 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#666',
-  },
-  notificationSettingsButton: {
-    backgroundColor: '#00C897',
-    padding: 12,
-    borderRadius: 25,
-    shadowColor: '#00C897',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  notificationSettingsText: {
-    fontSize: 18,
-  },
-  notificationDashboard: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  dashboardTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 12,
-  },
-  dashboardRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  dashboardItem: {
-    alignItems: 'center',
-  },
-  dashboardNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#00C897',
-  },
-  dashboardLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
   },
   listContainer: {
     paddingHorizontal: 20,
@@ -984,7 +715,7 @@ const styles = StyleSheet.create({
   },
   shareItemPreview: {
     backgroundColor: '#f0f0f0',
-        padding: 16,
+    padding: 16,
     borderRadius: 10,
     marginBottom: 16,
   },
@@ -996,14 +727,15 @@ const styles = StyleSheet.create({
   },
   shareItemDetail: {
     fontSize: 14,
-    color: '#555',
+    color: '#666',
     marginBottom: 2,
   },
   shareDescription: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 16,
     textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 10,
   },
   shareConfirmButton: {
     backgroundColor: '#00C897',
@@ -1017,15 +749,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-  settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  settingLabel: {
-    fontSize: 16,
-    color: '#333',
   },
 });

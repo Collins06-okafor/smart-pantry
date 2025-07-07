@@ -439,7 +439,7 @@ export default function ShareScreen({ navigation }) {
             style={styles.removeButton} 
             onPress={() => removeSharedItem(item.id)}
           >
-            <Text style={styles.removeButtonText}>Stop Sharing</Text>
+            <Text style={styles.removeButtonText}>Delete share</Text>
           </TouchableOpacity>
         )}
       </View>

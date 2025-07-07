@@ -151,7 +151,8 @@ export default function LocationPickerScreen({ navigation }) {
           return;
         }
 
-        navigation.replace('Dashboard');
+        navigation.replace('MainTabs', { screen: 'Dashboard' });
+
       }
     } catch (error) {
       console.error('Error saving location:', error);

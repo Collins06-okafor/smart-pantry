@@ -183,6 +183,20 @@ export default function Dashboard({ navigation }) {
         <Text style={styles.buttonText}>⚙️ Profile & Settings</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity
+  onPress={() => navigation.navigate('RequestFood')}
+  style={{
+    backgroundColor: '#5a2ca0',
+    padding: 14,
+    borderRadius: 25,
+    marginTop: 20,
+    alignItems: 'center'
+  }}
+>
+  <Text style={{ color: '#fff', fontWeight: 'bold' }}>📢 Request Food</Text>
+</TouchableOpacity>
+
+
 
     </ScrollView>
   );

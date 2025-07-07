@@ -13,6 +13,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { supabase } from '../lib/supabase';
 
+
 const { width } = Dimensions.get('window');
 
 export default function AddItemScreen({ route, navigation }) {
