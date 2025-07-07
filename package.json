@@ -1,0 +1,50 @@
+{
+  "name": "smart-pantry",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@expo/config-plugins": "10.0.0",
+    "@react-native-community/datetimepicker": "8.4.1",
+    "@react-navigation/bottom-tabs": "^7.4.2",
+    "@react-navigation/native": "^7.1.14",
+    "@react-navigation/native-stack": "^7.3.21",
+    "@supabase/supabase-js": "^2.50.2",
+    "expo": "53.0.16",
+    "expo-dev-client": "~5.2.3",
+    "expo-device": "~7.1.4",
+    "expo-location": "~18.1.6",
+    "expo-notifications": "~0.31.3",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.5",
+    "react-native-gesture-handler": "~2.24.0",
+    "react-native-google-places-autocomplete": "^2.5.7",
+    "react-native-maps": "1.20.1",
+    "react-native-reanimated": "~3.17.4",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.11.1",
+    "react-native-svg": "15.11.2",
+    "react-native-vector-icons": "^10.2.0",
+    "uuid": "^8.3.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0"
+  },
+  "overrides": {
+    "@expo/config-plugins": "10.0.0"
+  },
+  "private": true,
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "listUnknownPackages": false
+      }
+    }
+  }
+}

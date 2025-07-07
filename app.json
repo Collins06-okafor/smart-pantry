@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "smart-pantry",
+    "slug": "smart-pantry",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "jsEngine": "hermes",
+    "newArchEnabled": false,
+    
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    
+    "ios": {
+      "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": "AIzaSyCZdKRukNvtA6YzdyQnaDaIGoqVop0aDhg"
+      },
+      "bundleIdentifier": "com.collins06.smartpantry",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyCZdKRukNvtA6YzdyQnaDaIGoqVop0aDhg"
+        }
+      },
+      "package": "com.collins06.smartpantry"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9badee3d-342e-44ce-95a9-c2ef964c708e"
+      }
+    },
+    "plugins": [
+      "expo-dev-client"
+    ]
+  }
+}
