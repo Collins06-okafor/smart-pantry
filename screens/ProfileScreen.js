@@ -35,6 +35,7 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [wasteSavedCount, setWasteSavedCount] = useState(0);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [allergies, setAllergies] = useState(''); // Moved to proper location
 
   useEffect(() => {
     loadProfile();
@@ -76,6 +77,7 @@ export default function ProfileScreen() {
           expiry_alerts_enabled: data.expiry_alerts_enabled ?? true,
           recipe_suggestions_enabled: data.recipe_suggestions_enabled ?? true,
         });
+        setAllergies((data.allergies || []).join(', '));
       }
     } catch (error) {
       console.error('Load profile error:', error);
@@ -154,6 +156,7 @@ export default function ProfileScreen() {
         latitude: profile.latitude ? parseFloat(profile.latitude) : null,
         longitude: profile.longitude ? parseFloat(profile.longitude) : null,
         updated_at: new Date().toISOString(),
+        allergies: allergies.split(',').map(a => a.trim().toLowerCase()).filter(a => a.length > 0),
       };
 
       const { error } = await supabase.from('profile').upsert(updates);
@@ -390,6 +393,18 @@ export default function ProfileScreen() {
         </Text>
       </TouchableOpacity>
 
+      <Text style={styles.sectionTitle}>🍽️ Dietary Information</Text>
+
+      <Text style={styles.label}>Allergies (comma separated)</Text>
+      <TextInput
+        style={styles.input}
+        value={allergies}
+        onChangeText={setAllergies}
+        placeholder="e.g. peanuts, shellfish, dairy"
+        multiline={true}
+        numberOfLines={2}
+      />
+
       <Text style={styles.sectionTitle}>⚙️ Settings</Text>
 
       <View style={styles.switchContainer}>
@@ -467,6 +482,12 @@ const styles = StyleSheet.create({
     marginTop: 24,
     marginBottom: 12,
     color: '#333',
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+    color: '#555',
   },
   input: {
     backgroundColor: '#fff',

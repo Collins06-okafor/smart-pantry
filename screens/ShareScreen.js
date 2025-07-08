@@ -20,10 +20,11 @@ export default function ShareScreen({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('available'); // 'available', 'myshared', 'mypantry'
+  const [activeTab, setActiveTab] = useState('available'); // 'available', 'requests', 'myshared', 'mypantry'
   
   // Data states
   const [sharedItems, setSharedItems] = useState([]);
+  const [foodRequests, setFoodRequests] = useState([]);
   const [mySharedItems, setMySharedItems] = useState([]);
   const [myPantryItems, setMyPantryItems] = useState([]);
   const [nearbyUsers, setNearbyUsers] = useState([]);
@@ -31,6 +32,9 @@ export default function ShareScreen({ navigation }) {
   // Modal states
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedItemForShare, setSelectedItemForShare] = useState(null);
+  const [showOfferModal, setShowOfferModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [offerMessage, setOfferMessage] = useState('');
 
   useEffect(() => {
     initializeScreen();
@@ -43,6 +47,32 @@ export default function ShareScreen({ navigation }) {
       }
     }, [currentUser])
   );
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('shared_items_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'shared_items',
+      }, (payload) => {
+        console.log('🔄 Change detected:', payload);
+        refreshAllData();
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'food_requests',
+      }, (payload) => {
+        console.log('🔄 Food request change detected:', payload);
+        refreshAllData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const initializeScreen = async () => {
     try {
@@ -64,6 +94,7 @@ export default function ShareScreen({ navigation }) {
     
     await Promise.all([
       fetchSharedItems(nearbyUsers),
+      fetchFoodRequests(nearbyUsers),
       fetchMySharedItems(currentUser.id),
       fetchMyPantryItems(currentUser.id),
     ]);
@@ -74,48 +105,77 @@ export default function ShareScreen({ navigation }) {
     refreshAllData().finally(() => setRefreshing(false));
   }, [currentUser, nearbyUsers]);
 
- const fetchNearbyUsers = async (userId) => {
-  try {
-    console.log('Fetching nearby users for:', userId);
-    
-    // Get current user's location
-    const { data: myProfile, error: profileError } = await supabase
-      .from('profile')
-      .select('latitude, longitude')
-      .eq('id', userId)
-      .single();
+  const fetchNearbyUsers = async (userId) => {
+    try {
+      console.log('Fetching nearby users for:', userId);
+      
+      const { data: myProfile, error: profileError } = await supabase
+        .from('profile')
+        .select('latitude, longitude')
+        .eq('id', userId)
+        .single();
 
-    console.log('My profile:', myProfile);
-    console.log('Profile error:', profileError);
+      console.log('My profile:', myProfile);
+      console.log('Profile error:', profileError);
 
-    if (profileError) throw profileError;
-    if (!myProfile.latitude || !myProfile.longitude) {
-      console.log('No location set for current user');
-      return setNearbyUsers([]);
+      if (profileError) throw profileError;
+      if (!myProfile.latitude || !myProfile.longitude) {
+        console.log('No location set for current user');
+        return setNearbyUsers([]);
+      }
+
+      const { data, error } = await supabase.rpc('get_nearby_users', {
+        lat: myProfile.latitude,
+        lng: myProfile.longitude,
+        radius: 10000,
+        exclude_user_id: userId
+      });
+
+      console.log('Nearby users query result:', data);
+      console.log('Nearby users error:', error);
+
+      if (error) throw error;
+
+      const userIds = data.map(u => u.id);
+      console.log('Setting nearby users:', userIds);
+      setNearbyUsers(userIds);
+    } catch (err) {
+      console.error('Error fetching nearby users:', err);
+      setNearbyUsers([]);
+    }
+  };
+
+  const fetchFoodRequests = async (userIds) => {
+    if (userIds.length === 0) {
+      setFoodRequests([]);
+      return;
     }
 
-    // Query users within 10km radius
-    const { data, error } = await supabase.rpc('get_nearby_users', {
-      lat: myProfile.latitude,
-      lng: myProfile.longitude,
-      radius: 10000, // 10km in meters
-      exclude_user_id: userId
-    });
+    try {
+      const { data, error } = await supabase
+        .from('food_requests')
+        .select(`
+          id,
+          item_name,
+          description,
+          urgency,
+          requested_at,
+          status,
+          user_id,
+          profile!food_requests_user_id_fkey(name, latitude, longitude)
+        `)
+        .in('user_id', userIds)
+        .eq('status', 'active')
+        .order('requested_at', { ascending: false });
 
-    console.log('Nearby users query result:', data);
-    console.log('Nearby users error:', error);
+      if (error) throw error;
 
-    if (error) throw error;
-
-    const userIds = data.map(u => u.id);
-    console.log('Setting nearby users:', userIds);
-    setNearbyUsers(userIds);
-  } catch (err) {
-    console.error('Error fetching nearby users:', err);
-    setNearbyUsers([]);
-  }
-};
-
+      setFoodRequests(data || []);
+    } catch (err) {
+      console.error('Error fetching food requests:', err);
+      setFoodRequests([]);
+    }
+  };
 
   const fetchSharedItems = async (userIds) => {
     if (userIds.length === 0) {
@@ -171,6 +231,7 @@ export default function ShareScreen({ navigation }) {
           )
         `)
         .eq('user_id', userId)
+        .in('status', ['available', 'requested'])
         .order('offered_at', { ascending: false });
 
       if (error) throw error;
@@ -184,7 +245,6 @@ export default function ShareScreen({ navigation }) {
 
   const fetchMyPantryItems = async (userId) => {
     try {
-      // Get pantry items that are NOT already shared
       const { data: sharedItemIds, error: sharedError } = await supabase
         .from('shared_items')
         .select('item_id')
@@ -254,7 +314,6 @@ export default function ShareScreen({ navigation }) {
     if (!currentUser) return;
     
     try {
-      // Check if item is already shared
       const { data: existingShare, error: checkError } = await supabase
         .from('shared_items')
         .select('id')
@@ -293,6 +352,35 @@ export default function ShareScreen({ navigation }) {
     }
   };
 
+  const offerHelp = async (requestId) => {
+    try {
+      const { error } = await supabase
+        .from('food_request_offers')
+        .insert({
+          request_id: requestId,
+          helper_id: currentUser.id,
+          message: offerMessage,
+          offered_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Your offer has been sent to the requester!');
+      setShowOfferModal(false);
+      setOfferMessage('');
+      setSelectedRequest(null);
+      await refreshAllData();
+    } catch (err) {
+      console.error('Error offering help:', err);
+      Alert.alert('Error', 'Failed to send offer. Please try again.');
+    }
+  };
+
+  const handleOfferHelp = (request) => {
+    setSelectedRequest(request);
+    setShowOfferModal(true);
+  };
+
   const handleShareItem = (item) => {
     setSelectedItemForShare(item);
     setShowShareModal(true);
@@ -303,9 +391,21 @@ export default function ShareScreen({ navigation }) {
     setSelectedItemForShare(null);
   };
 
+  const cancelOffer = () => {
+    setShowOfferModal(false);
+    setSelectedRequest(null);
+    setOfferMessage('');
+  };
+
   const confirmShare = () => {
     if (selectedItemForShare) {
       shareItem(selectedItemForShare.id);
+    }
+  };
+
+  const confirmOffer = () => {
+    if (selectedRequest) {
+      offerHelp(selectedRequest.id);
     }
   };
 
@@ -332,6 +432,32 @@ export default function ShareScreen({ navigation }) {
         return 'Completed';
       default:
         return 'Unknown';
+    }
+  };
+
+  const getUrgencyColor = (urgency) => {
+    switch (urgency) {
+      case 'high':
+        return '#f44336';
+      case 'medium':
+        return '#ff9800';
+      case 'low':
+        return '#4caf50';
+      default:
+        return '#9e9e9e';
+    }
+  };
+
+  const getUrgencyText = (urgency) => {
+    switch (urgency) {
+      case 'high':
+        return 'Urgent';
+      case 'medium':
+        return 'Medium';
+      case 'low':
+        return 'Low';
+      default:
+        return 'Normal';
     }
   };
 
@@ -363,6 +489,36 @@ export default function ShareScreen({ navigation }) {
     } catch {
       return { status: 'unknown', days: 0 };
     }
+  };
+
+  const renderFoodRequest = ({ item }) => {
+    return (
+      <View style={styles.itemCard}>
+        <View style={styles.itemHeader}>
+          <Text style={styles.itemName}>{item.item_name}</Text>
+          <View style={[styles.urgencyBadge, { backgroundColor: getUrgencyColor(item.urgency) }]}>
+            <Text style={styles.urgencyText}>{getUrgencyText(item.urgency)}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.itemDetails}>
+          <Text style={styles.detailText}>📝 {item.description}</Text>
+          <Text style={styles.detailText}>
+            👤 Requested by: {item.profile?.name || 'Anonymous'}
+          </Text>
+          <Text style={styles.detailText}>
+            📅 Requested: {formatDate(item.requested_at)}
+          </Text>
+        </View>
+
+        <TouchableOpacity 
+          style={styles.helpButton} 
+          onPress={() => handleOfferHelp(item)}
+        >
+          <Text style={styles.helpButtonText}>🤝 Offer Help</Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   const renderNearbyItem = ({ item }) => {
@@ -504,6 +660,34 @@ export default function ShareScreen({ navigation }) {
           />
         );
       
+      case 'requests':
+        return (
+          <FlatList
+            data={foodRequests}
+            keyExtractor={(item) => item.id.toString()}
+            renderItem={renderFoodRequest}
+            contentContainerStyle={styles.listContainer}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#00C897']}
+                tintColor="#00C897"
+              />
+            }
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyIcon}>🤝</Text>
+                <Text style={styles.emptyTitle}>No food requests</Text>
+                <Text style={styles.emptyText}>
+                  No neighbors are requesting food right now. Check back later!
+                </Text>
+              </View>
+            }
+          />
+        );
+      
       case 'myshared':
         return (
           <FlatList
@@ -577,6 +761,15 @@ export default function ShareScreen({ navigation }) {
       </TouchableOpacity>
       
       <TouchableOpacity
+        style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
+        onPress={() => setActiveTab('requests')}
+      >
+        <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
+          Requests ({foodRequests.length})
+        </Text>
+      </TouchableOpacity>
+      
+      <TouchableOpacity
         style={[styles.tab, activeTab === 'myshared' && styles.activeTab]}
         onPress={() => setActiveTab('myshared')}
       >
@@ -609,25 +802,23 @@ export default function ShareScreen({ navigation }) {
   }
 
   return (
-  <SafeAreaView style={styles.container}>
-    <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
 
-    <View style={styles.header}>
-      <Text style={styles.title}>Community Sharing</Text>
-      <Text style={styles.subtitle}>Share food, reduce waste</Text>
-    </View>
+      <View style={styles.header}>
+        <Text style={styles.title}>Community Sharing</Text>
+        <Text style={styles.subtitle}>Share food, reduce waste</Text>
+      </View>
 
-    {/* Request Food Button */}
-    <TouchableOpacity
-      style={styles.requestButtonTop}
-      onPress={() => navigation.navigate('RequestFood')}
-    >
-      <Text style={styles.requestButtonTextTop}>🤝 Request Food</Text>
-    </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.requestButtonTop}
+        onPress={() => navigation.navigate('RequestFood')}
+      >
+        <Text style={styles.requestButtonTextTop}>🤝 Request Food</Text>
+      </TouchableOpacity>
 
-    {renderTabs()}
-    {renderTabContent()}
-
+      {renderTabs()}
+      {renderTabContent()}
 
       {/* Share Confirmation Modal */}
       <Modal
@@ -660,6 +851,50 @@ export default function ShareScreen({ navigation }) {
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmButton} onPress={confirmShare}>
                 <Text style={styles.confirmButtonText}>📤 Share Item</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Offer Help Modal */}
+      <Modal
+        animationType="slide"
+        transparent
+        visible={showOfferModal}
+        onRequestClose={cancelOffer}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Offer Help</Text>
+            
+            {selectedRequest && (
+              <View style={styles.shareItemPreview}>
+                <Text style={styles.shareItemName}>{selectedRequest.item_name}</Text>
+                <Text style={styles.shareItemDetail}>Requested by: {selectedRequest.profile?.name || 'Anonymous'}</Text>
+                <Text style={styles.shareItemDetail}>{selectedRequest.description}</Text>
+              </View>
+            )}
+
+            <Text style={styles.shareDescription}>
+              Send a message to offer help with this food request:
+            </Text>
+
+            <TextInput
+              style={styles.messageInput}
+              placeholder="Type your message here..."
+              multiline
+              numberOfLines={4}
+              value={offerMessage}
+              onChangeText={setOfferMessage}
+            />
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.cancelButton} onPress={cancelOffer}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmButton} onPress={confirmOffer}>
+                <Text style={styles.confirmButtonText}>🤝 Send Offer</Text>
               </TouchableOpacity>
             </View>
           </View>

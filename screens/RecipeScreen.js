@@ -27,8 +27,11 @@ export default function RecipeScreen() {
 
   const API_KEY = '62f8f2c9d58b4ff3952e3c6ae227136c';
 
+  const [userAllergies, setUserAllergies] = useState([]);
+
   useEffect(() => {
     fetchPantryItems();
+    fetchAllergies();
   }, []);
 
   const fetchPantryItems = async () => {
@@ -60,6 +63,59 @@ export default function RecipeScreen() {
     }
   };
 
+  const fetchAllergies = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('profile')
+        .select('allergies')
+        .eq('id', user.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data?.allergies) {
+        const allergyList = data.allergies
+          .split(',')
+          .map(a => a.trim().toLowerCase());
+        setUserAllergies(allergyList);
+      }
+    } catch (err) {
+      console.error('Failed to fetch allergies:', err.message);
+    }
+  };
+
+  const filterRecipesByAllergy = (recipesList) => {
+    if (!userAllergies.length) return recipesList;
+
+    const allergySet = new Set(userAllergies);
+
+    return recipesList.filter(recipe => {
+      // Check missedIngredients (from ingredient-based search)
+      const missedIngredients = recipe?.missedIngredients || [];
+      const hasMissedAllergen = missedIngredients.some(ingredient =>
+        allergySet.has(ingredient.name?.toLowerCase())
+      );
+
+      // Check usedIngredients (from ingredient-based search)
+      const usedIngredients = recipe?.usedIngredients || [];
+      const hasUsedAllergen = usedIngredients.some(ingredient =>
+        allergySet.has(ingredient.name?.toLowerCase())
+      );
+
+      // Check extendedIngredients (from complex search/random recipes)
+      const extendedIngredients = recipe?.extendedIngredients || [];
+      const hasExtendedAllergen = extendedIngredients.some(ingredient =>
+        allergySet.has(ingredient.name?.toLowerCase())
+      );
+
+      // Return false if any allergen is found
+      return !hasMissedAllergen && !hasUsedAllergen && !hasExtendedAllergen;
+    });
+  };
+
   const fetchRecipesByIngredients = async (ingredients) => {
     try {
       const ingredientQuery = ingredients.slice(0, 5).join(',');
@@ -72,7 +128,8 @@ export default function RecipeScreen() {
         throw new Error('Unexpected response from recipe API');
       }
 
-      setRecipes(result);
+      const filtered = filterRecipesByAllergy(result);
+      setRecipes(filtered);
       setError('');
     } catch (err) {
       console.error('Recipe fetch error:', err.message);
@@ -93,7 +150,8 @@ export default function RecipeScreen() {
       const result = await response.json();
 
       if (result.results && Array.isArray(result.results)) {
-        setRecipes(result.results);
+        const filtered = filterRecipesByAllergy(result.results);
+        setRecipes(filtered);
         setError('');
       } else {
         setRecipes([]);
@@ -116,7 +174,8 @@ export default function RecipeScreen() {
       const result = await response.json();
 
       if (result.recipes && Array.isArray(result.recipes)) {
-        setRecipes(result.recipes);
+        const filtered = filterRecipesByAllergy(result.recipes);
+        setRecipes(filtered);
         setError('');
       } else {
         setRecipes([]);
@@ -141,7 +200,8 @@ export default function RecipeScreen() {
       const result = await response.json();
 
       if (result.results && Array.isArray(result.results)) {
-        setRecipes(result.results);
+        const filtered = filterRecipesByAllergy(result.results);
+        setRecipes(filtered);
         setError('');
       } else {
         setRecipes([]);
@@ -314,6 +374,19 @@ export default function RecipeScreen() {
     </ScrollView>
   );
 
+  // Add allergy indicator if user has allergies
+  const renderAllergyIndicator = () => {
+    if (userAllergies.length === 0) return null;
+    
+    return (
+      <View style={styles.allergyIndicator}>
+        <Text style={styles.allergyText}>
+          🚫 Filtering out: {userAllergies.join(', ')}
+        </Text>
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -330,6 +403,7 @@ export default function RecipeScreen() {
       <Text style={styles.screenTitle}>Recipe Discovery</Text>
       
       {renderTabBar()}
+      {renderAllergyIndicator()}
       
       {activeTab === 'pantry' && pantryItems.length > 0 && (
         <Text style={styles.basedOnText}>
@@ -412,6 +486,20 @@ const styles = StyleSheet.create({
   },
   activeTabText: {
     color: '#fff',
+  },
+  allergyIndicator: {
+    backgroundColor: '#fff3cd',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#ffeaa7',
+  },
+  allergyText: {
+    fontSize: 12,
+    color: '#856404',
+    textAlign: 'center',
+    fontWeight: '500',
   },
   searchContainer: {
     flexDirection: 'row',
