@@ -448,6 +448,16 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={[styles.button, styles.chatButton]}
+          onPress={() => navigation.navigate('Chat', { 
+            chatType: 'general', 
+            title: 'Community Chat' 
+          })}
+        >
+          <Text style={styles.buttonText}>💬 Community Chat</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.button, styles.logoutButton]}
           onPress={handleLogout}
         >
@@ -545,6 +555,9 @@ const styles = StyleSheet.create({
   },
   resetButton: {
     backgroundColor: '#FF9500',
+  },
+  chatButton: {
+    backgroundColor: '#007AFF',
   },
   logoutButton: {
     backgroundColor: '#f44336',

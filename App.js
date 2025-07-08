@@ -15,6 +15,7 @@ import RecipeScreen from './screens/RecipeScreen';
 import ShareScreen from './screens/ShareScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import RequestFoodScreen from './screens/RequestFoodScreen';
+import ChatScreen from './screens/ChatScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -145,6 +146,12 @@ export default function App() {
           component={RequestFoodScreen}
           options={{ title: 'Request Food' }}
         />
+
+        <Stack.Screen 
+  name="Chat" 
+  component={ChatScreen}
+  options={{ title: 'Chat' }}
+/>
       </Stack.Navigator>
     </NavigationContainer>
   );
