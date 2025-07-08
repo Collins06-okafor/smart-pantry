@@ -246,6 +246,9 @@ export default function RecipeScreen() {
       servings: item.servings,
       summary: item.summary
     };
+     const caloriesInfo = item?.nutrition?.nutrients?.find(n => n.name === 'Calories');
+
+
 
     return (
       <View style={styles.card}>
@@ -258,6 +261,11 @@ export default function RecipeScreen() {
         {recipeData.servings && (
           <Text style={styles.metaText}>🍽️ Serves {recipeData.servings}</Text>
         )}
+
+        {caloriesInfo && (
+  <Text style={styles.metaText}>🔥 {Math.round(caloriesInfo.amount)} {caloriesInfo.unit} Calories</Text>
+)}
+
 
         {recipeData.usedIngredients?.length > 0 && (
           <Text style={styles.ingredients}>

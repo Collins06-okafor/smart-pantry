@@ -14,6 +14,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../lib/notifications';
+import { AppState } from 'react-native';
 
 const { width } = Dimensions.get('window');
 
@@ -35,6 +36,31 @@ export default function Dashboard({ navigation }) {
       fetchDashboardData();
     }, [])
   );
+
+  useEffect(() => {
+  const updateOnlineStatus = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.from('profiles').update({ is_online: true }).eq('id', user.id);
+    }
+  };
+
+  updateOnlineStatus();
+}, []);
+
+useEffect(() => {
+  const handleAppStateChange = async (state) => {
+    if (state === 'background' || state === 'inactive') {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase.from('profiles').update({ is_online: false }).eq('id', user.id);
+      }
+    }
+  };
+
+  const subscription = AppState.addEventListener('change', handleAppStateChange);
+  return () => subscription.remove();
+}, []);
 
   const fetchDashboardData = async () => {
     if (!refreshing) setLoading(true);

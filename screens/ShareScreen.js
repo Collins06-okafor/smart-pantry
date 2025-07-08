@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,136 +16,88 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 
-export default function ShareScreen({ navigation }) {
-  const [currentUser, setCurrentUser] = useState(null);
+// Constants
+const TABS = {
+  AVAILABLE: 'available',
+  REQUESTS: 'requests',
+  MY_SHARED: 'myshared',
+  MY_PANTRY: 'mypantry',
+};
+
+const STATUSES = {
+  AVAILABLE: 'available',
+  REQUESTED: 'requested',
+  COMPLETED: 'completed',
+  ACTIVE: 'active',
+};
+
+const URGENCY_LEVELS = {
+  HIGH: 'high',
+  MEDIUM: 'medium',
+  LOW: 'low',
+};
+
+const NEARBY_RADIUS = 10000; // 10km in meters
+
+// Custom hooks
+const useModal = (initialState = false) => {
+  const [isOpen, setIsOpen] = useState(initialState);
+  const [selectedItem, setSelectedItem] = useState(null);
+  
+  const open = useCallback((item = null) => {
+    setSelectedItem(item);
+    setIsOpen(true);
+  }, []);
+  
+  const close = useCallback(() => {
+    setIsOpen(false);
+    setSelectedItem(null);
+  }, []);
+  
+  return { isOpen, selectedItem, open, close };
+};
+
+const useShareData = (currentUser) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('available'); // 'available', 'requests', 'myshared', 'mypantry'
+  const [nearbyUsers, setNearbyUsers] = useState([]);
   
   // Data states
   const [sharedItems, setSharedItems] = useState([]);
   const [foodRequests, setFoodRequests] = useState([]);
   const [mySharedItems, setMySharedItems] = useState([]);
   const [myPantryItems, setMyPantryItems] = useState([]);
-  const [nearbyUsers, setNearbyUsers] = useState([]);
-  
-  // Modal states
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [selectedItemForShare, setSelectedItemForShare] = useState(null);
-  const [showOfferModal, setShowOfferModal] = useState(false);
-  const [selectedRequest, setSelectedRequest] = useState(null);
-  const [offerMessage, setOfferMessage] = useState('');
 
-  useEffect(() => {
-    initializeScreen();
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (currentUser) {
-        refreshAllData();
-      }
-    }, [currentUser])
-  );
-
-  useEffect(() => {
-    const channel = supabase
-      .channel('shared_items_changes')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'shared_items',
-      }, (payload) => {
-        console.log('🔄 Change detected:', payload);
-        refreshAllData();
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'food_requests',
-      }, (payload) => {
-        console.log('🔄 Food request change detected:', payload);
-        refreshAllData();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const initializeScreen = async () => {
+  const fetchNearbyUsers = useCallback(async (userId) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      setCurrentUser(user);
-      if (user) {
-        await fetchNearbyUsers(user.id);
-        await refreshAllData();
-      }
-    } catch (error) {
-      console.error('Error initializing screen:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const refreshAllData = async () => {
-    if (!currentUser) return;
-    
-    await Promise.all([
-      fetchSharedItems(nearbyUsers),
-      fetchFoodRequests(nearbyUsers),
-      fetchMySharedItems(currentUser.id),
-      fetchMyPantryItems(currentUser.id),
-    ]);
-  };
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    refreshAllData().finally(() => setRefreshing(false));
-  }, [currentUser, nearbyUsers]);
-
-  const fetchNearbyUsers = async (userId) => {
-    try {
-      console.log('Fetching nearby users for:', userId);
-      
       const { data: myProfile, error: profileError } = await supabase
         .from('profile')
         .select('latitude, longitude')
         .eq('id', userId)
         .single();
 
-      console.log('My profile:', myProfile);
-      console.log('Profile error:', profileError);
-
       if (profileError) throw profileError;
       if (!myProfile.latitude || !myProfile.longitude) {
-        console.log('No location set for current user');
-        return setNearbyUsers([]);
+        setNearbyUsers([]);
+        return;
       }
 
       const { data, error } = await supabase.rpc('get_nearby_users', {
         lat: myProfile.latitude,
         lng: myProfile.longitude,
-        radius: 10000,
+        radius: NEARBY_RADIUS,
         exclude_user_id: userId
       });
 
-      console.log('Nearby users query result:', data);
-      console.log('Nearby users error:', error);
-
       if (error) throw error;
-
-      const userIds = data.map(u => u.id);
-      console.log('Setting nearby users:', userIds);
-      setNearbyUsers(userIds);
+      setNearbyUsers(data?.map(u => u.id) || []);
     } catch (err) {
       console.error('Error fetching nearby users:', err);
       setNearbyUsers([]);
     }
-  };
+  }, []);
 
-  const fetchFoodRequests = async (userIds) => {
+  const fetchFoodRequests = useCallback(async (userIds) => {
     if (userIds.length === 0) {
       setFoodRequests([]);
       return;
@@ -165,19 +117,18 @@ export default function ShareScreen({ navigation }) {
           profile!food_requests_user_id_fkey(name, latitude, longitude)
         `)
         .in('user_id', userIds)
-        .eq('status', 'active')
+        .eq('status', STATUSES.ACTIVE)
         .order('requested_at', { ascending: false });
 
       if (error) throw error;
-
       setFoodRequests(data || []);
     } catch (err) {
       console.error('Error fetching food requests:', err);
       setFoodRequests([]);
     }
-  };
+  }, []);
 
-  const fetchSharedItems = async (userIds) => {
+  const fetchSharedItems = useCallback(async (userIds) => {
     if (userIds.length === 0) {
       setSharedItems([]);
       return;
@@ -202,19 +153,18 @@ export default function ShareScreen({ navigation }) {
           )
         `)
         .in('user_id', userIds)
-        .eq('status', 'available')
+        .eq('status', STATUSES.AVAILABLE)
         .order('offered_at', { ascending: false });
 
       if (error) throw error;
-
       setSharedItems(data || []);
     } catch (err) {
       console.error('Error fetching shared items:', err);
       setSharedItems([]);
     }
-  };
+  }, []);
 
-  const fetchMySharedItems = async (userId) => {
+  const fetchMySharedItems = useCallback(async (userId) => {
     try {
       const { data, error } = await supabase
         .from('shared_items')
@@ -231,25 +181,24 @@ export default function ShareScreen({ navigation }) {
           )
         `)
         .eq('user_id', userId)
-        .in('status', ['available', 'requested'])
+        .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED])
         .order('offered_at', { ascending: false });
 
       if (error) throw error;
-
       setMySharedItems(data || []);
     } catch (err) {
       console.error('Error fetching my shared items:', err);
       setMySharedItems([]);
     }
-  };
+  }, []);
 
-  const fetchMyPantryItems = async (userId) => {
+  const fetchMyPantryItems = useCallback(async (userId) => {
     try {
       const { data: sharedItemIds, error: sharedError } = await supabase
         .from('shared_items')
         .select('item_id')
         .eq('user_id', userId)
-        .in('status', ['available', 'requested']);
+        .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
 
       if (sharedError) throw sharedError;
 
@@ -265,21 +214,222 @@ export default function ShareScreen({ navigation }) {
       }
 
       const { data, error } = await query;
-
       if (error) throw error;
-
       setMyPantryItems(data || []);
     } catch (err) {
       console.error('Error fetching pantry items:', err);
       setMyPantryItems([]);
     }
-  };
+  }, []);
 
-  const requestItem = async (sharedItemId) => {
+  const refreshAllData = useCallback(async () => {
+    if (!currentUser) return;
+    
+    await Promise.all([
+      fetchSharedItems(nearbyUsers),
+      fetchFoodRequests(nearbyUsers),
+      fetchMySharedItems(currentUser.id),
+      fetchMyPantryItems(currentUser.id),
+    ]);
+  }, [currentUser, nearbyUsers, fetchSharedItems, fetchFoodRequests, fetchMySharedItems, fetchMyPantryItems]);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    refreshAllData().finally(() => setRefreshing(false));
+  }, [refreshAllData]);
+
+  return {
+    loading,
+    setLoading,
+    refreshing,
+    sharedItems,
+    foodRequests,
+    mySharedItems,
+    myPantryItems,
+    nearbyUsers,
+    fetchNearbyUsers,
+    refreshAllData,
+    onRefresh,
+  };
+};
+
+// Utility functions
+const getStatusColor = (status) => {
+  const colors = {
+    [STATUSES.AVAILABLE]: '#4CAF50',
+    [STATUSES.REQUESTED]: '#FF9800',
+    [STATUSES.COMPLETED]: '#2196F3',
+  };
+  return colors[status] || '#9E9E9E';
+};
+
+const getStatusText = (status) => {
+  const texts = {
+    [STATUSES.AVAILABLE]: 'Available',
+    [STATUSES.REQUESTED]: 'Requested',
+    [STATUSES.COMPLETED]: 'Completed',
+  };
+  return texts[status] || 'Unknown';
+};
+
+const getUrgencyColor = (urgency) => {
+  const colors = {
+    [URGENCY_LEVELS.HIGH]: '#f44336',
+    [URGENCY_LEVELS.MEDIUM]: '#ff9800',
+    [URGENCY_LEVELS.LOW]: '#4caf50',
+  };
+  return colors[urgency] || '#9e9e9e';
+};
+
+const getUrgencyText = (urgency) => {
+  const texts = {
+    [URGENCY_LEVELS.HIGH]: 'Urgent',
+    [URGENCY_LEVELS.MEDIUM]: 'Medium',
+    [URGENCY_LEVELS.LOW]: 'Low',
+  };
+  return texts[urgency] || 'Normal';
+};
+
+const formatDate = (dateString) => {
+  if (!dateString) return 'N/A';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return dateString;
+  }
+};
+
+const getExpirationStatus = (dateString) => {
+  try {
+    const expiration = new Date(dateString);
+    const today = new Date();
+    const diffTime = expiration - today;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays < 0) return { status: 'expired', days: Math.abs(diffDays) };
+    if (diffDays <= 3) return { status: 'expiring', days: diffDays };
+    return { status: 'fresh', days: diffDays };
+  } catch {
+    return { status: 'unknown', days: 0 };
+  }
+};
+
+// Main component
+export default function ShareScreen({ navigation }) {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [activeTab, setActiveTab] = useState(TABS.AVAILABLE);
+  const [offerMessage, setOfferMessage] = useState('');
+  
+  const shareModal = useModal();
+  const offerModal = useModal();
+  
+  const {
+    loading,
+    setLoading,
+    refreshing,
+    sharedItems,
+    foodRequests,
+    mySharedItems,
+    myPantryItems,
+    nearbyUsers,
+    fetchNearbyUsers,
+    refreshAllData,
+    onRefresh,
+  } = useShareData(currentUser);
+
+  // Memoized computed values
+  const tabCounts = useMemo(() => ({
+    [TABS.AVAILABLE]: sharedItems.length,
+    [TABS.REQUESTS]: foodRequests.length,
+    [TABS.MY_SHARED]: mySharedItems.length,
+    [TABS.MY_PANTRY]: myPantryItems.length,
+  }), [sharedItems.length, foodRequests.length, mySharedItems.length, myPantryItems.length]);
+
+  const enrichedSharedItems = useMemo(() => 
+    sharedItems.map(item => ({
+      ...item,
+      expirationStatus: getExpirationStatus(item.pantry_items?.expiration_date),
+    })), [sharedItems]
+  );
+
+  const enrichedMySharedItems = useMemo(() => 
+    mySharedItems.map(item => ({
+      ...item,
+      expirationStatus: getExpirationStatus(item.pantry_items?.expiration_date),
+    })), [mySharedItems]
+  );
+
+  const enrichedMyPantryItems = useMemo(() => 
+    myPantryItems.map(item => ({
+      ...item,
+      expirationStatus: getExpirationStatus(item.expiration_date),
+    })), [myPantryItems]
+  );
+
+  // Effects
+  useEffect(() => {
+    const initializeScreen = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setCurrentUser(user);
+        if (user) {
+          await fetchNearbyUsers(user.id);
+        }
+      } catch (error) {
+        console.error('Error initializing screen:', error);
+        Alert.alert('Error', 'Failed to initialize screen. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initializeScreen();
+  }, [fetchNearbyUsers, setLoading]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (currentUser) {
+        refreshAllData();
+      }
+    }, [currentUser, refreshAllData])
+  );
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('shared_items_changes')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'shared_items',
+      }, () => {
+        refreshAllData();
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'food_requests',
+      }, () => {
+        refreshAllData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refreshAllData]);
+
+  // Action handlers
+  const handleRequestItem = useCallback(async (sharedItemId) => {
     try {
       const { error } = await supabase
         .from('shared_items')
-        .update({ status: 'requested' })
+        .update({ status: STATUSES.REQUESTED })
         .eq('id', sharedItemId);
 
       if (error) throw error;
@@ -290,9 +440,9 @@ export default function ShareScreen({ navigation }) {
       console.error('Error requesting item:', err);
       Alert.alert('Error', 'Failed to request item. Please try again.');
     }
-  };
+  }, [refreshAllData]);
 
-  const removeSharedItem = async (sharedItemId) => {
+  const handleRemoveSharedItem = useCallback(async (sharedItemId) => {
     try {
       const { error } = await supabase
         .from('shared_items')
@@ -308,9 +458,9 @@ export default function ShareScreen({ navigation }) {
       console.error('Error removing shared item:', err);
       Alert.alert('Error', 'Failed to remove item. Please try again.');
     }
-  };
+  }, [currentUser?.id, refreshAllData]);
 
-  const shareItem = async (itemId) => {
+  const handleShareItem = useCallback(async (itemId) => {
     if (!currentUser) return;
     
     try {
@@ -335,24 +485,22 @@ export default function ShareScreen({ navigation }) {
         .insert({
           item_id: itemId,
           user_id: currentUser.id,
-          status: 'available',
+          status: STATUSES.AVAILABLE,
           offered_at: new Date().toISOString()
         });
 
-      if (error) {
-        Alert.alert('Error', `Failed to share item: ${error.message}`);
-      } else {
-        Alert.alert('Success', 'Item shared with your neighbors!');
-        setShowShareModal(false);
-        await refreshAllData();
-      }
+      if (error) throw error;
+
+      Alert.alert('Success', 'Item shared with your neighbors!');
+      shareModal.close();
+      await refreshAllData();
     } catch (err) {
       console.error('Share error:', err);
-      Alert.alert('Error', 'An unexpected error occurred while sharing the item.');
+      Alert.alert('Error', 'Failed to share item. Please try again.');
     }
-  };
+  }, [currentUser, shareModal, refreshAllData]);
 
-  const offerHelp = async (requestId) => {
+  const handleOfferHelp = useCallback(async (requestId) => {
     try {
       const { error } = await supabase
         .from('food_request_offers')
@@ -366,167 +514,50 @@ export default function ShareScreen({ navigation }) {
       if (error) throw error;
 
       Alert.alert('Success', 'Your offer has been sent to the requester!');
-      setShowOfferModal(false);
+      offerModal.close();
       setOfferMessage('');
-      setSelectedRequest(null);
       await refreshAllData();
     } catch (err) {
       console.error('Error offering help:', err);
       Alert.alert('Error', 'Failed to send offer. Please try again.');
     }
-  };
+  }, [currentUser?.id, offerMessage, offerModal, refreshAllData]);
 
-  const handleOfferHelp = (request) => {
-    setSelectedRequest(request);
-    setShowOfferModal(true);
-  };
-
-  const handleShareItem = (item) => {
-    setSelectedItemForShare(item);
-    setShowShareModal(true);
-  };
-
-  const cancelShare = () => {
-    setShowShareModal(false);
-    setSelectedItemForShare(null);
-  };
-
-  const cancelOffer = () => {
-    setShowOfferModal(false);
-    setSelectedRequest(null);
-    setOfferMessage('');
-  };
-
-  const confirmShare = () => {
-    if (selectedItemForShare) {
-      shareItem(selectedItemForShare.id);
-    }
-  };
-
-  const confirmOffer = () => {
-    if (selectedRequest) {
-      offerHelp(selectedRequest.id);
-    }
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'available':
-        return '#4CAF50';
-      case 'requested':
-        return '#FF9800';
-      case 'completed':
-        return '#2196F3';
-      default:
-        return '#9E9E9E';
-    }
-  };
-
-  const getStatusText = (status) => {
-    switch (status) {
-      case 'available':
-        return 'Available';
-      case 'requested':
-        return 'Requested';
-      case 'completed':
-        return 'Completed';
-      default:
-        return 'Unknown';
-    }
-  };
-
-  const getUrgencyColor = (urgency) => {
-    switch (urgency) {
-      case 'high':
-        return '#f44336';
-      case 'medium':
-        return '#ff9800';
-      case 'low':
-        return '#4caf50';
-      default:
-        return '#9e9e9e';
-    }
-  };
-
-  const getUrgencyText = (urgency) => {
-    switch (urgency) {
-      case 'high':
-        return 'Urgent';
-      case 'medium':
-        return 'Medium';
-      case 'low':
-        return 'Low';
-      default:
-        return 'Normal';
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date)) return dateString;
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
-
-  const getExpirationStatus = (dateString) => {
-    try {
-      const expiration = new Date(dateString);
-      const today = new Date();
-      const diffTime = expiration - today;
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (diffDays < 0) return { status: 'expired', days: Math.abs(diffDays) };
-      if (diffDays <= 3) return { status: 'expiring', days: diffDays };
-      return { status: 'fresh', days: diffDays };
-    } catch {
-      return { status: 'unknown', days: 0 };
-    }
-  };
-
-  const renderFoodRequest = ({ item }) => {
-    return (
-      <View style={styles.itemCard}>
-        <View style={styles.itemHeader}>
-          <Text style={styles.itemName}>{item.item_name}</Text>
-          <View style={[styles.urgencyBadge, { backgroundColor: getUrgencyColor(item.urgency) }]}>
-            <Text style={styles.urgencyText}>{getUrgencyText(item.urgency)}</Text>
-          </View>
+  // Render functions
+  const renderFoodRequest = useCallback(({ item }) => (
+    <View style={styles.itemCard}>
+      <View style={styles.itemHeader}>
+        <Text style={styles.itemName}>{item.item_name}</Text>
+        <View style={[styles.urgencyBadge, { backgroundColor: getUrgencyColor(item.urgency) }]}>
+          <Text style={styles.urgencyText}>{getUrgencyText(item.urgency)}</Text>
         </View>
-        
-        <View style={styles.itemDetails}>
-          <Text style={styles.detailText}>📝 {item.description}</Text>
-          <Text style={styles.detailText}>
-            👤 Requested by: {item.profile?.name || 'Anonymous'}
-          </Text>
-          <Text style={styles.detailText}>
-            📅 Requested: {formatDate(item.requested_at)}
-          </Text>
-        </View>
-
-        <TouchableOpacity 
-          style={styles.helpButton} 
-          onPress={() => handleOfferHelp(item)}
-        >
-          <Text style={styles.helpButtonText}>🤝 Offer Help</Text>
-        </TouchableOpacity>
       </View>
-    );
-  };
+      
+      <View style={styles.itemDetails}>
+        <Text style={styles.detailText}>📝 {item.description}</Text>
+        <Text style={styles.detailText}>
+          👤 Requested by: {item.profile?.name || 'Anonymous'}
+        </Text>
+        <Text style={styles.detailText}>
+          📅 Requested: {formatDate(item.requested_at)}
+        </Text>
+      </View>
 
-  const renderNearbyItem = ({ item }) => {
+      <TouchableOpacity 
+        style={styles.helpButton} 
+        onPress={() => offerModal.open(item)}
+        accessibilityLabel={`Offer help for ${item.item_name}`}
+      >
+        <Text style={styles.helpButtonText}>🤝 Offer Help</Text>
+      </TouchableOpacity>
+    </View>
+  ), [offerModal]);
+
+  const renderNearbyItem = useCallback(({ item }) => {
     const pantryItem = item.pantry_items;
     if (!pantryItem) return null;
 
-    const expirationStatus = getExpirationStatus(pantryItem.expiration_date);
-    const isExpiringSoon = expirationStatus.status === 'expiring' || expirationStatus.status === 'expired';
+    const isExpiringSoon = item.expirationStatus.status === 'expiring' || item.expirationStatus.status === 'expired';
 
     return (
       <View style={styles.itemCard}>
@@ -551,24 +582,24 @@ export default function ShareScreen({ navigation }) {
           </Text>
         </View>
 
-        {item.status === 'available' && (
+        {item.status === STATUSES.AVAILABLE && (
           <TouchableOpacity 
             style={styles.requestButton} 
-            onPress={() => requestItem(item.id)}
+            onPress={() => handleRequestItem(item.id)}
+            accessibilityLabel={`Request ${pantryItem.item_name}`}
           >
             <Text style={styles.requestButtonText}>Request Item</Text>
           </TouchableOpacity>
         )}
       </View>
     );
-  };
+  }, [handleRequestItem]);
 
-  const renderMySharedItem = ({ item }) => {
+  const renderMySharedItem = useCallback(({ item }) => {
     const pantryItem = item.pantry_items;
     if (!pantryItem) return null;
 
-    const expirationStatus = getExpirationStatus(pantryItem.expiration_date);
-    const isExpiringSoon = expirationStatus.status === 'expiring' || expirationStatus.status === 'expired';
+    const isExpiringSoon = item.expirationStatus.status === 'expiring' || item.expirationStatus.status === 'expired';
 
     return (
       <View style={styles.itemCard}>
@@ -590,21 +621,21 @@ export default function ShareScreen({ navigation }) {
           </Text>
         </View>
 
-        {item.status === 'available' && (
+        {item.status === STATUSES.AVAILABLE && (
           <TouchableOpacity 
             style={styles.removeButton} 
-            onPress={() => removeSharedItem(item.id)}
+            onPress={() => handleRemoveSharedItem(item.id)}
+            accessibilityLabel={`Stop sharing ${pantryItem.item_name}`}
           >
             <Text style={styles.removeButtonText}>Stop Sharing</Text>
           </TouchableOpacity>
         )}
       </View>
     );
-  };
+  }, [handleRemoveSharedItem]);
 
-  const renderMyPantryItem = ({ item }) => {
-    const expirationStatus = getExpirationStatus(item.expiration_date);
-    const isExpiringSoon = expirationStatus.status === 'expiring' || expirationStatus.status === 'expired';
+  const renderMyPantryItem = useCallback(({ item }) => {
+    const isExpiringSoon = item.expirationStatus.status === 'expiring' || item.expirationStatus.status === 'expired';
 
     return (
       <View style={styles.itemCard}>
@@ -622,173 +653,94 @@ export default function ShareScreen({ navigation }) {
 
         <TouchableOpacity 
           style={styles.shareButton} 
-          onPress={() => handleShareItem(item)}
+          onPress={() => shareModal.open(item)}
+          accessibilityLabel={`Share ${item.item_name}`}
         >
           <Text style={styles.shareButtonText}>📤 Share</Text>
         </TouchableOpacity>
       </View>
     );
-  };
+  }, [shareModal]);
 
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'available':
-        return (
-          <FlatList
-            data={sharedItems}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderNearbyItem}
-            contentContainerStyle={styles.listContainer}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#00C897']}
-                tintColor="#00C897"
-              />
-            }
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>🏠</Text>
-                <Text style={styles.emptyTitle}>No items available</Text>
-                <Text style={styles.emptyText}>
-                  No neighbors are sharing items right now. Check back later!
-                </Text>
-              </View>
-            }
-          />
-        );
-      
-      case 'requests':
-        return (
-          <FlatList
-            data={foodRequests}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderFoodRequest}
-            contentContainerStyle={styles.listContainer}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#00C897']}
-                tintColor="#00C897"
-              />
-            }
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>🤝</Text>
-                <Text style={styles.emptyTitle}>No food requests</Text>
-                <Text style={styles.emptyText}>
-                  No neighbors are requesting food right now. Check back later!
-                </Text>
-              </View>
-            }
-          />
-        );
-      
-      case 'myshared':
-        return (
-          <FlatList
-            data={mySharedItems}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderMySharedItem}
-            contentContainerStyle={styles.listContainer}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#00C897']}
-                tintColor="#00C897"
-              />
-            }
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>📤</Text>
-                <Text style={styles.emptyTitle}>No shared items</Text>
-                <Text style={styles.emptyText}>
-                  You haven't shared any items yet. Share items from your pantry to help your neighbors!
-                </Text>
-              </View>
-            }
-          />
-        );
-      
-      case 'mypantry':
-        return (
-          <FlatList
-            data={myPantryItems}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderMyPantryItem}
-            contentContainerStyle={styles.listContainer}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#00C897']}
-                tintColor="#00C897"
-              />
-            }
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyIcon}>🥫</Text>
-                <Text style={styles.emptyTitle}>All items shared</Text>
-                <Text style={styles.emptyText}>
-                  All your pantry items are already shared or you don't have any items to share.
-                </Text>
-              </View>
-            }
-          />
-        );
-      
-      default:
-        return null;
-    }
-  };
-
-  const renderTabs = () => (
-    <View style={styles.tabContainer}>
-      <TouchableOpacity
-        style={[styles.tab, activeTab === 'available' && styles.activeTab]}
-        onPress={() => setActiveTab('available')}
-      >
-        <Text style={[styles.tabText, activeTab === 'available' && styles.activeTabText]}>
-          Available ({sharedItems.length})
-        </Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={[styles.tab, activeTab === 'requests' && styles.activeTab]}
-        onPress={() => setActiveTab('requests')}
-      >
-        <Text style={[styles.tabText, activeTab === 'requests' && styles.activeTabText]}>
-          Requests ({foodRequests.length})
-        </Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={[styles.tab, activeTab === 'myshared' && styles.activeTab]}
-        onPress={() => setActiveTab('myshared')}
-      >
-        <Text style={[styles.tabText, activeTab === 'myshared' && styles.activeTabText]}>
-          My Shared ({mySharedItems.length})
-        </Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity
-        style={[styles.tab, activeTab === 'mypantry' && styles.activeTab]}
-        onPress={() => setActiveTab('mypantry')}
-      >
-        <Text style={[styles.tabText, activeTab === 'mypantry' && styles.activeTabText]}>
-          Share More ({myPantryItems.length})
-        </Text>
-      </TouchableOpacity>
+  const renderEmptyState = useCallback((icon, title, text) => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyIcon}>{icon}</Text>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptyText}>{text}</Text>
     </View>
-  );
+  ), []);
 
+  const renderTabContent = useCallback(() => {
+    const tabConfig = {
+      [TABS.AVAILABLE]: {
+        data: enrichedSharedItems,
+        renderItem: renderNearbyItem,
+        emptyState: renderEmptyState('🏠', 'No items available', 'No neighbors are sharing items right now. Check back later!'),
+      },
+      [TABS.REQUESTS]: {
+        data: foodRequests,
+        renderItem: renderFoodRequest,
+        emptyState: renderEmptyState('🤝', 'No food requests', 'No neighbors are requesting food right now. Check back later!'),
+      },
+      [TABS.MY_SHARED]: {
+        data: enrichedMySharedItems,
+        renderItem: renderMySharedItem,
+        emptyState: renderEmptyState('📤', 'No shared items', "You haven't shared any items yet. Share items from your pantry to help your neighbors!"),
+      },
+      [TABS.MY_PANTRY]: {
+        data: enrichedMyPantryItems,
+        renderItem: renderMyPantryItem,
+        emptyState: renderEmptyState('🥫', 'All items shared', "All your pantry items are already shared or you don't have any items to share."),
+      },
+    };
+
+    const config = tabConfig[activeTab];
+    if (!config) return null;
+
+    return (
+      <FlatList
+        data={config.data}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={config.renderItem}
+        contentContainerStyle={styles.listContainer}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#00C897']}
+            tintColor="#00C897"
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        ListEmptyComponent={config.emptyState}
+      />
+    );
+  }, [activeTab, enrichedSharedItems, enrichedMySharedItems, enrichedMyPantryItems, foodRequests, renderNearbyItem, renderFoodRequest, renderMySharedItem, renderMyPantryItem, renderEmptyState, refreshing, onRefresh]);
+
+  const renderTabs = useCallback(() => (
+    <View style={styles.tabContainer}>
+      {Object.entries({
+        [TABS.AVAILABLE]: 'Available',
+        [TABS.REQUESTS]: 'Requests',
+        [TABS.MY_SHARED]: 'My Shared',
+        [TABS.MY_PANTRY]: 'Share More',
+      }).map(([tabKey, tabLabel]) => (
+        <TouchableOpacity
+          key={tabKey}
+          style={[styles.tab, activeTab === tabKey && styles.activeTab]}
+          onPress={() => setActiveTab(tabKey)}
+          accessibilityLabel={`${tabLabel} tab`}
+          accessibilityState={{ selected: activeTab === tabKey }}
+        >
+          <Text style={[styles.tabText, activeTab === tabKey && styles.activeTabText]}>
+            {tabLabel} ({tabCounts[tabKey]})
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  ), [activeTab, tabCounts]);
+
+  // Loading state
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -813,6 +765,7 @@ export default function ShareScreen({ navigation }) {
       <TouchableOpacity
         style={styles.requestButtonTop}
         onPress={() => navigation.navigate('RequestFood')}
+        accessibilityLabel="Request food from neighbors"
       >
         <Text style={styles.requestButtonTextTop}>🤝 Request Food</Text>
       </TouchableOpacity>
@@ -824,19 +777,19 @@ export default function ShareScreen({ navigation }) {
       <Modal
         animationType="slide"
         transparent
-        visible={showShareModal}
-        onRequestClose={cancelShare}
+        visible={shareModal.isOpen}
+        onRequestClose={shareModal.close}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Share Item</Text>
             
-            {selectedItemForShare && (
+            {shareModal.selectedItem && (
               <View style={styles.shareItemPreview}>
-                <Text style={styles.shareItemName}>{selectedItemForShare.item_name}</Text>
-                <Text style={styles.shareItemDetail}>Quantity: {selectedItemForShare.quantity}</Text>
+                <Text style={styles.shareItemName}>{shareModal.selectedItem.item_name}</Text>
+                <Text style={styles.shareItemDetail}>Quantity: {shareModal.selectedItem.quantity}</Text>
                 <Text style={styles.shareItemDetail}>
-                  Expires: {formatDate(selectedItemForShare.expiration_date)}
+                  Expires: {formatDate(shareModal.selectedItem.expiration_date)}
                 </Text>
               </View>
             )}
@@ -846,10 +799,18 @@ export default function ShareScreen({ navigation }) {
             </Text>
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelButton} onPress={cancelShare}>
+              <TouchableOpacity 
+                style={styles.cancelButton} 
+                onPress={shareModal.close}
+                accessibilityLabel="Cancel sharing"
+              >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmButton} onPress={confirmShare}>
+              <TouchableOpacity 
+                style={styles.confirmButton} 
+                onPress={() => handleShareItem(shareModal.selectedItem?.id)}
+                accessibilityLabel="Confirm sharing item"
+              >
                 <Text style={styles.confirmButtonText}>📤 Share Item</Text>
               </TouchableOpacity>
             </View>
@@ -861,18 +822,24 @@ export default function ShareScreen({ navigation }) {
       <Modal
         animationType="slide"
         transparent
-        visible={showOfferModal}
-        onRequestClose={cancelOffer}
+        visible={offerModal.isOpen}
+        onRequestClose={offerModal.close}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Offer Help</Text>
             
-            {selectedRequest && (
+            {offerModal.selectedItem && (
               <View style={styles.shareItemPreview}>
-                <Text style={styles.shareItemName}>{selectedRequest.item_name}</Text>
-                <Text style={styles.shareItemDetail}>Requested by: {selectedRequest.profile?.name || 'Anonymous'}</Text>
-                <Text style={styles.shareItemDetail}>{selectedRequest.description}</Text>
+                <Text style={styles.shareItemName}>
+                  {offerModal.selectedItem.item_name}
+                </Text>
+                <Text style={styles.shareItemDetail}>
+                  Requested by: {offerModal.selectedItem.profile?.name || 'Anonymous'}
+                </Text>
+                <Text style={styles.shareItemDetail}>
+                  {offerModal.selectedItem.description}
+                </Text>
               </View>
             )}
 
@@ -887,13 +854,21 @@ export default function ShareScreen({ navigation }) {
               numberOfLines={4}
               value={offerMessage}
               onChangeText={setOfferMessage}
+              accessibilityLabel="Message to offer help"
+              textAlignVertical="top"
             />
 
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelButton} onPress={cancelOffer}>
+              <TouchableOpacity 
+                style={styles.cancelButton} 
+                onPress={offerModal.close}
+              >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmButton} onPress={confirmOffer}>
+              <TouchableOpacity 
+                style={styles.confirmButton} 
+                onPress={() => handleOfferHelp(offerModal.selectedItem?.id)}
+              >
                 <Text style={styles.confirmButtonText}>🤝 Send Offer</Text>
               </TouchableOpacity>
             </View>
@@ -1086,6 +1061,14 @@ const styles = StyleSheet.create({
     padding: 24,
     width: '90%',
     maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   modalTitle: {
     fontSize: 22,
@@ -1118,6 +1101,16 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 10,
   },
+  messageInput: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 16,
+    minHeight: 100,
+    marginBottom: 10,
+    backgroundColor: '#f9f9f9',
+  },
   modalButtons: {
     flexDirection: 'row',
     gap: 12,
@@ -1149,18 +1142,19 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-
+  
+  // Test button styles
   requestButtonTop: {
-  marginHorizontal: 20,
-  marginBottom: 10,
-  paddingVertical: 12,
-  borderRadius: 8,
-  backgroundColor: '#5a2ca0',
-  alignItems: 'center',
-},
-requestButtonTextTop: {
-  color: '#fff',
-  fontWeight: 'bold',
-  fontSize: 16,
-},
+    marginHorizontal: 20,
+    marginBottom: 10,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#5a2ca0',
+    alignItems: 'center',
+  },
+  requestButtonTextTop: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });
