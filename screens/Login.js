@@ -7,19 +7,41 @@ export default function Login({ navigation }) {
   const [password, setPassword] = useState('');
 
   const handleLogin = async () => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) {
-      Alert.alert('Login Error', error.message);
-    } else {
-      Alert.alert('Success', 'Logged in!');
-      navigation.replace('Location');
-      
-// TODO: Navigate to your app's main screen here
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    Alert.alert('Login Error', error.message);
+  } else {
+    const user = data.user;
+
+    // Fetch profile for the logged-in user
+    const { data: profile, error: profileError } = await supabase
+      .from('profile')
+      .select('city, address, latitude, longitude')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError) {
+      console.error('Profile fetch error:', profileError);
+      Alert.alert('Error', 'Could not load user profile');
+      return;
     }
-  };
+
+    const hasLocation =
+      profile.city && profile.latitude !== null && profile.longitude !== null;
+
+
+    if (hasLocation) {
+      navigation.replace('MainTabs'); // go straight to dashboard
+    } else {
+      navigation.replace('Location'); // prompt for location
+    }
+  }
+};
+
 
   return (
     <View style={styles.container}>

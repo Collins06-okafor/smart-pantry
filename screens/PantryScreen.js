@@ -14,6 +14,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import DiscardItemModal from './DiscardItemModal';
 import { supabase } from '../lib/supabase';
 
 export default function PantryScreen({ navigation }) {
@@ -35,6 +36,11 @@ export default function PantryScreen({ navigation }) {
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [selectedItemForShare, setSelectedItemForShare] = useState(null);
 
+  const [discardModalVisible, setDiscardModalVisible] = useState(false);
+  const [selectedItemForDiscard, setSelectedItemForDiscard] = useState(null);
+
+  const [discardStats, setDiscardStats] = useState([]);
+
   useEffect(() => {
     initializeScreen();
   }, []);
@@ -51,6 +57,7 @@ export default function PantryScreen({ navigation }) {
       setCurrentUser(user);
       if (user) {
         await fetchPantryItems();
+        await fetchDiscardedItemsStats();
       }
     } catch (error) {
       console.error('Error initializing screen:', error);
@@ -137,6 +144,33 @@ export default function PantryScreen({ navigation }) {
     }
   };
 
+  const fetchDiscardedItemsStats = async () => {
+    if (!currentUser?.id) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('discarded_items')
+        .select('reason, timestamp, item_name, quantity')
+        .eq('user_id', currentUser.id)
+        .order('timestamp', { ascending: false });
+
+      if (error) {
+        console.error('Discard fetch error:', error.message);
+        setDiscardStats([]);
+      } else {
+        setDiscardStats(data || []);
+      }
+    } catch (err) {
+      console.error('Unexpected error fetching discard stats:', err);
+      setDiscardStats([]);
+    }
+  };
+
+  const handleDiscard = (item) => {
+    setSelectedItemForDiscard(item);
+    setDiscardModalVisible(true);
+  };
+
   const handleEdit = (item) => {
     setEditForm({
       id: item.id,
@@ -158,7 +192,6 @@ export default function PantryScreen({ navigation }) {
       return;
     }
 
-    // Validate date format
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(editForm.expiration_date)) {
       Alert.alert("Invalid Date", "Please use YYYY-MM-DD format for the expiration date.");
@@ -206,7 +239,6 @@ export default function PantryScreen({ navigation }) {
     if (!currentUser || !selectedItemForShare) return;
     
     try {
-      // Check if item is already shared
       const { data: existingShare, error: checkError } = await supabase
         .from('shared_items')
         .select('id')
@@ -311,18 +343,27 @@ export default function PantryScreen({ navigation }) {
         </View>
         
         <View style={styles.itemActions}>
+          <TouchableOpacity
+            style={[styles.deleteButton, { backgroundColor: '#888' }]}
+            onPress={() => handleDiscard(item)}
+          >
+            <Text style={styles.deleteButtonText}>♻️</Text>
+          </TouchableOpacity>
+          
           <TouchableOpacity 
             style={styles.shareButton} 
             onPress={() => handleShare(item)}
           >
             <Text style={styles.shareButtonText}>📤</Text>
           </TouchableOpacity>
+          
           <TouchableOpacity 
             style={styles.editButton} 
             onPress={() => handleEdit(item)}
           >
             <Text style={styles.editButtonText}>✏️</Text>
           </TouchableOpacity>
+          
           <TouchableOpacity 
             style={styles.deleteButton} 
             onPress={() => handleDelete(item)}
@@ -357,6 +398,41 @@ export default function PantryScreen({ navigation }) {
     </View>
   );
 
+  const renderDiscardAnalytics = () => {
+    if (discardStats.length === 0) return null;
+
+    const reasonCounts = discardStats.reduce((acc, item) => {
+      const reason = item.reason || 'No reason given';
+      acc[reason] = (acc[reason] || 0) + 1;
+      return acc;
+    }, {});
+
+    const topReasons = Object.entries(reasonCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+
+    return (
+      <View style={styles.discardAnalytics}>
+        <Text style={styles.discardTitle}>♻️ Discard Analytics</Text>
+        <View style={styles.discardStats}>
+          <Text style={styles.discardStat}>
+            Total Discarded: <Text style={styles.statValue}>{discardStats.length}</Text>
+          </Text>
+          <Text style={styles.discardStat}>
+            Last Discarded: <Text style={styles.statValue}>{formatDate(discardStats[0]?.timestamp)}</Text>
+          </Text>
+        </View>
+
+        <Text style={styles.reasonsTitle}>Top Discard Reasons:</Text>
+        {topReasons.map(([reason, count], index) => (
+          <Text key={index} style={styles.reasonItem}>
+            • {reason} ({count} time{count > 1 ? 's' : ''})
+          </Text>
+        ))}
+      </View>
+    );
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -376,23 +452,44 @@ export default function PantryScreen({ navigation }) {
       {pantryItems.length === 0 ? (
         renderEmptyState()
       ) : (
-        <FlatList
-          data={pantryItems}
-          keyExtractor={(item) => item.id?.toString()}
-          renderItem={renderItem}
-          ListHeaderComponent={renderHeader}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={['#00C897']}
-              tintColor="#00C897"
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        />
+        <>
+          <FlatList
+            data={pantryItems}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderItem}
+            ListHeaderComponent={renderHeader}
+            contentContainerStyle={styles.listContainer}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#00C897']}
+                tintColor="#00C897"
+              />
+            }
+            showsVerticalScrollIndicator={false}
+          />
+          
+          {renderDiscardAnalytics()}
+        </>
       )}
+
+      {/* Discard Modal */}
+      <DiscardItemModal
+        visible={discardModalVisible}
+        onClose={() => {
+          setDiscardModalVisible(false);
+          setSelectedItemForDiscard(null);
+        }}
+        itemId={selectedItemForDiscard?.id}
+        userId={currentUser?.id}
+        onDiscardComplete={() => {
+          fetchPantryItems();
+          fetchDiscardedItemsStats();
+          setDiscardModalVisible(false);
+          setSelectedItemForDiscard(null);
+        }}
+      />
 
       {/* Edit Modal */}
       <Modal
@@ -645,7 +742,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  // Modal Styles
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -749,5 +845,45 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  discardStats: {
+    marginBottom: 12,
+  },
+  discardStat: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  statValue: {
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  reasonsTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+  reasonItem: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 2,
+  },
+  discardAnalytics: {
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginVertical: 10,
+    padding: 16,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  discardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#333',
   },
 });

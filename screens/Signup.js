@@ -112,7 +112,7 @@ export default function Signup({ navigation }) {
           Alert.alert('Success', 'Account created successfully!', [
             {
               text: 'OK',
-              onPress: () => navigation.navigate('Login')
+              onPress: () => navigation.navigate('Location')
             }
           ]);
         } catch (err) {

@@ -1,22 +1,19 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  SafeAreaView,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
-  SafeAreaView,
-  Dimensions,
+  AppState,
+  StyleSheet,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import * as Notifications from 'expo-notifications';
 import { registerForPushNotificationsAsync } from '../lib/notifications';
-import { AppState } from 'react-native';
-
-const { width } = Dimensions.get('window');
 
 export default function Dashboard({ navigation }) {
   const [name, setName] = useState('');
@@ -25,6 +22,7 @@ export default function Dashboard({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [discardedStats, setDiscardedStats] = useState({ thisMonth: 0, total: 0 });
 
   useEffect(() => {
     fetchDashboardData();
@@ -38,29 +36,35 @@ export default function Dashboard({ navigation }) {
   );
 
   useEffect(() => {
-  const updateOnlineStatus = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase.from('profiles').update({ is_online: true }).eq('id', user.id);
-    }
-  };
-
-  updateOnlineStatus();
-}, []);
-
-useEffect(() => {
-  const handleAppStateChange = async (state) => {
-    if (state === 'background' || state === 'inactive') {
+    const updateOnlineStatus = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        await supabase.from('profiles').update({ is_online: false }).eq('id', user.id);
+        await supabase.from('profile').update({ is_online: true }).eq('id', user.id);
       }
-    }
-  };
+    };
+    updateOnlineStatus();
+  }, []);
 
-  const subscription = AppState.addEventListener('change', handleAppStateChange);
-  return () => subscription.remove();
-}, []);
+  useEffect(() => {
+    const handleAppStateChange = async (state) => {
+      if (state === 'background' || state === 'inactive') {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from('profile').update({ is_online: false }).eq('id', user.id);
+        }
+      }
+    };
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Login' }],
+    });
+  };
 
   const fetchDashboardData = async () => {
     if (!refreshing) setLoading(true);
@@ -74,58 +78,61 @@ useEffect(() => {
       }
 
       const [profileResult, pantryResult] = await Promise.all([
-        supabase
-          .from('profile')
-          .select('name')
-          .eq('id', user.id)
-          .single(),
-        supabase
-          .from('pantry_items')
-          .select('*')
-          .eq('user_id', user.id)
+        supabase.from('profile').select('name').eq('id', user.id).single(),
+        supabase.from('pantry_items').select('*').eq('user_id', user.id),
       ]);
 
       const { data: profile } = profileResult;
-      const { data: pantryItems, error: pantryError } = pantryResult;
+      const pantryItems = pantryResult.data || [];
 
       if (profile?.name) {
         setName(profile.name.split(' ')[0]);
       }
 
-      if (pantryError) {
-        setError('Failed to load pantry data');
-        return;
-      }
-
-      const safeItems = Array.isArray(pantryItems) ? pantryItems : [];
-      setPantryCount(safeItems.length);
-
-      const expiring = calculateExpiringSoon(safeItems);
+      setPantryCount(pantryItems.length);
+      const expiring = calculateExpiringSoon(pantryItems);
       setExpiringSoon(expiring);
 
-      expiring.forEach(item => {
+      const stats = await fetchDiscardedStats(user.id);
+      setDiscardedStats(stats);
+
+      expiring.forEach((item) => {
         scheduleExpiryNotification(item.item_name, item.expiration_date);
       });
-
     } catch (err) {
-      setError('An unexpected error occurred');
+      console.error('Dashboard fetch error:', err);
+      setError('Unexpected error');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchDashboardData();
-  }, []);
+  const fetchDiscardedStats = async (userId) => {
+    const { data, error } = await supabase
+      .from('discarded_items')
+      .select('timestamp')
+      .eq('user_id', userId);
+
+    if (error) return { thisMonth: 0, total: 0 };
+
+    const now = new Date();
+    const thisMonth = now.getMonth();
+    const thisYear = now.getFullYear();
+
+    const thisMonthCount = data.filter((item) => {
+      const d = new Date(item.timestamp);
+      return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+    }).length;
+
+    return { thisMonth: thisMonthCount, total: data.length };
+  };
 
   const calculateExpiringSoon = (items) => {
     const today = new Date();
-    const threeDaysFromNow = new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000);
-
-    return items.filter(item => {
-      if (!item?.expiration_date) return false;
+    const threeDaysFromNow = new Date(today.getTime() + 3 * 86400000);
+    return items.filter((item) => {
+      if (!item.expiration_date) return false;
       const expDate = new Date(item.expiration_date);
       return expDate >= today && expDate <= threeDaysFromNow;
     });
@@ -138,127 +145,137 @@ useEffect(() => {
         body: `${itemName} expires on ${date}`,
         sound: 'default',
       },
-      trigger: {
-        seconds: 5,
-      },
+      trigger: { seconds: 5 },
     });
   };
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchDashboardData();
+  }, []);
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#00C897" />
-          <Text style={{ marginTop: 10 }}>Loading dashboard...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (error) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.centered}>
-          <Text style={styles.error}>Error: {error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchDashboardData}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+      <SafeAreaView style={styles.centered}>
+        <ActivityIndicator size="large" color="#00C897" />
+        <Text>Loading dashboard...</Text>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.container}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#00C897']}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Header Section */}
-        <View style={styles.headerSection}>
-          <Text style={styles.greeting}>Good day!</Text>
-          <Text style={styles.userName}>{name || 'Welcome'} 👋</Text>
-        </View>
+      {/* Logout Button */}
+      <View style={styles.logoutRow}>
+        <View />
+        <TouchableOpacity onPress={handleLogout}>
+          <Text style={styles.logoutText}>Logout</Text>
+        </TouchableOpacity>
+      </View>
 
-        {/* Stats Cards */}
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        <Text style={styles.greeting}>Good day!</Text>
+        <Text style={styles.userName}>{name || 'Welcome'} 👋</Text>
+
+        {/* Stats */}
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{pantryCount}</Text>
             <Text style={styles.statLabel}>Items in Pantry</Text>
           </View>
-          <View style={[styles.statCard, expiringSoon.length > 0 && styles.warningCard]}>
-            <Text style={[styles.statNumber, expiringSoon.length > 0 && styles.warningNumber]}>
+          <View
+            style={[
+              styles.statCard,
+              expiringSoon.length > 0 && styles.warningCard,
+            ]}
+          >
+            <Text
+              style={[
+                styles.statNumber,
+                expiringSoon.length > 0 && styles.warningNumber,
+              ]}
+            >
               {expiringSoon.length}
             </Text>
-            <Text style={[styles.statLabel, expiringSoon.length > 0 && styles.warningLabel]}>
+            <Text
+              style={[
+                styles.statLabel,
+                expiringSoon.length > 0 && styles.warningLabel,
+              ]}
+            >
               Expiring Soon
             </Text>
           </View>
         </View>
 
-        {/* Expiring Items Alert */}
+        {/* Expiring Soon Section */}
         {expiringSoon.length > 0 && (
           <View style={styles.alertCard}>
             <Text style={styles.alertTitle}>⚠️ Items Expiring Soon</Text>
-            {expiringSoon.slice(0, 3).map(item => (
+            {expiringSoon.slice(0, 3).map((item) => (
               <Text key={item.id} style={styles.alertItem}>
                 • {item.item_name} (expires {item.expiration_date})
               </Text>
             ))}
             {expiringSoon.length > 3 && (
-              <Text style={styles.alertMore}>
-                +{expiringSoon.length - 3} more items...
-              </Text>
+              <Text style={styles.alertMore}>+{expiringSoon.length - 3} more items...</Text>
             )}
           </View>
         )}
 
-        {/* Quick Actions Grid */}
+        {/* Discarded */}
+        <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
+          <Text style={{ fontSize: 16, color: '#333' }}>
+            🗑️ Discarded This Month: <Text style={{ fontWeight: 'bold' }}>{discardedStats.thisMonth}</Text>
+          </Text>
+          <Text style={{ fontSize: 16, color: '#333' }}>
+            ❌ Total Discarded: <Text style={{ fontWeight: 'bold' }}>{discardedStats.total}</Text>
+          </Text>
+        </View>
+
+        {/* Actions */}
         <View style={styles.quickActionsContainer}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <View style={styles.actionGrid}>
-            <TouchableOpacity 
-              style={[styles.actionCard, styles.primaryAction]} 
+            <TouchableOpacity
+              style={[styles.actionCard, styles.primaryAction]}
               onPress={() => navigation.navigate('Add')}
             >
               <Text style={styles.actionIcon}>➕</Text>
               <Text style={styles.actionTitle}>Add Item</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionCard} 
+            <TouchableOpacity
+              style={styles.actionCard}
               onPress={() => navigation.navigate('Pantry')}
             >
               <Text style={styles.actionIcon}>📦</Text>
               <Text style={styles.actionTitle}>My Pantry</Text>
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.actionGrid}>
-            <TouchableOpacity 
-              style={styles.actionCard} 
+            <TouchableOpacity
+              style={styles.actionCard}
               onPress={() => navigation.navigate('Recipes')}
             >
               <Text style={styles.actionIcon}>🍽️</Text>
               <Text style={styles.actionTitle}>Recipes</Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionCard} 
+            <TouchableOpacity
+              style={styles.actionCard}
               onPress={() => navigation.navigate('Share')}
             >
               <Text style={styles.actionIcon}>🤝</Text>
               <Text style={styles.actionTitle}>Share</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity onPress={() => navigation.navigate('DiscardedItems')}>
+            <Text style={styles.discardedHistoryLink}>View Discarded History →</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -270,16 +287,27 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
-  scrollView: {
+  centered: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoutRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    padding: 15,
+    backgroundColor: '#f8f9fa',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
+  },
+  logoutText: {
+    color: '#ff4d4d',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   container: {
     padding: 20,
-    paddingTop: 10,
-    paddingBottom: 20, // Reduced bottom padding since tab bar handles it
-  },
-  headerSection: {
-    marginBottom: 25,
+    paddingBottom: 40,
   },
   greeting: {
     fontSize: 16,
@@ -290,24 +318,20 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     color: '#333',
+    marginBottom: 25,
   },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 25,
+    marginBottom: 20,
   },
   statCard: {
     backgroundColor: '#fff',
     padding: 20,
-    borderRadius: 15,
+    borderRadius: 12,
     flex: 1,
     marginHorizontal: 5,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   warningCard: {
     backgroundColor: '#fff3cd',
@@ -355,7 +379,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   quickActionsContainer: {
-    marginBottom: 20,
+    marginTop: 20,
   },
   sectionTitle: {
     fontSize: 20,
@@ -375,10 +399,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 5,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
     elevation: 3,
   },
   primaryAction: {
@@ -393,22 +413,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  retryButton: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: '#00C897',
-    borderRadius: 6,
-  },
-  retryText: {
-    color: '#fff',
-  },
-  error: {
-    color: 'red',
-    textAlign: 'center',
+  discardedHistoryLink: {
+    color: '#00C897',
+    marginTop: 8,
+    textAlign: 'right',
+    fontSize: 16,
   },
 });

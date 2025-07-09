@@ -142,6 +142,7 @@ const useShareData = (currentUser) => {
           offered_at, 
           status,
           item_id,
+          item_link,
           user_id,
           pantry_items!inner(
             id,
@@ -196,7 +197,7 @@ const useShareData = (currentUser) => {
     try {
       const { data: sharedItemIds, error: sharedError } = await supabase
         .from('shared_items')
-        .select('item_id')
+        .select('item_link')
         .eq('user_id', userId)
         .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
 
@@ -627,7 +628,7 @@ export default function ShareScreen({ navigation }) {
             onPress={() => handleRemoveSharedItem(item.id)}
             accessibilityLabel={`Stop sharing ${pantryItem.item_name}`}
           >
-            <Text style={styles.removeButtonText}>Stop Sharing</Text>
+            <Text style={styles.removeButtonText}>Delete Sharing</Text>
           </TouchableOpacity>
         )}
       </View>

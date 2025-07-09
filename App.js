@@ -16,6 +16,7 @@ import ShareScreen from './screens/ShareScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import RequestFoodScreen from './screens/RequestFoodScreen';
 import ChatScreen from './screens/ChatScreen';
+import DiscardedItemsScreen from './screens/DiscardedItemsScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -156,6 +157,11 @@ export default function App() {
         <Stack.Screen 
           name="AddItem"
           component={AddItemScreen} 
+        />
+
+        <Stack.Screen 
+        name="DiscardedItems" 
+        component={DiscardedItemsScreen} 
         />
 
       </Stack.Navigator>

@@ -5,7 +5,6 @@ import {
   TextInput,
   ScrollView,
   StyleSheet,
-  Button,
   Alert,
   ActivityIndicator,
   Switch,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import * as Location from 'expo-location';
+import * as DocumentPicker from 'expo-document-picker';
 import { useNavigation } from '@react-navigation/native';
 
 export default function ProfileScreen() {
@@ -27,15 +27,19 @@ export default function ProfileScreen() {
     latitude: '',
     longitude: '',
     phone_number: '',
+    date_of_birth: '',
+    identity_url: '',
     is_sharing: true,
     expiry_alerts_enabled: true,
     recipe_suggestions_enabled: true,
   });
+
+  const [identityDoc, setIdentityDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [wasteSavedCount, setWasteSavedCount] = useState(0);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [allergies, setAllergies] = useState(''); // Moved to proper location
+  const [wasteSavedCount, setWasteSavedCount] = useState(0);
+  const [allergies, setAllergies] = useState('');
 
   useEffect(() => {
     loadProfile();
@@ -66,7 +70,7 @@ export default function ProfileScreen() {
         .eq('id', user.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') { // PGRST116 is "not found" error
+      if (error && error.code !== 'PGRST116') {
         console.error('Fetch error:', error);
         Alert.alert('Error', 'Failed to load profile');
       } else if (data) {
@@ -74,6 +78,8 @@ export default function ProfileScreen() {
           ...data,
           latitude: data.latitude?.toString() || '',
           longitude: data.longitude?.toString() || '',
+          date_of_birth: data.date_of_birth || '',
+          identity_url: data.identity_url || '',
           expiry_alerts_enabled: data.expiry_alerts_enabled ?? true,
           recipe_suggestions_enabled: data.recipe_suggestions_enabled ?? true,
         });
@@ -111,20 +117,32 @@ export default function ProfileScreen() {
 
   const validateProfile = () => {
     const errors = [];
-    
-    if (!profile.name?.trim()) errors.push('Name is required');
-    if (!profile.surname?.trim()) errors.push('Surname is required');
-    if (!profile.email?.trim()) errors.push('Email is required');
-    
+    const { name, surname, email, phone_number, date_of_birth } = profile;
+
+    if (!name?.trim()) errors.push('Name is required');
+    if (!surname?.trim()) errors.push('Surname is required');
+    if (!email?.trim()) errors.push('Email is required');
+
+    // Phone validation with country code
+    if (phone_number && !/^\+\d{6,15}$/.test(phone_number)) {
+      errors.push('Phone number must include country code (e.g., +905551234567)');
+    }
+
+    // Age validation
+    if (date_of_birth) {
+      const birthDate = new Date(date_of_birth);
+      const age = new Date(Date.now() - birthDate).getUTCFullYear() - 1970;
+      if (isNaN(age) || age < 17) {
+        errors.push('You must be at least 17 years old to use this app');
+      }
+    }
+
+    // Coordinate validation
     if (profile.latitude && isNaN(parseFloat(profile.latitude))) {
       errors.push('Latitude must be a valid number');
     }
     if (profile.longitude && isNaN(parseFloat(profile.longitude))) {
       errors.push('Longitude must be a valid number');
-    }
-    
-    if (profile.phone_number && !/^\+?[\d\s-()]+$/.test(profile.phone_number)) {
-      errors.push('Phone number format is invalid');
     }
     
     return errors;
@@ -150,11 +168,39 @@ export default function ProfileScreen() {
         return;
       }
 
+      let identity_url = profile.identity_url;
+
+      // Upload identity document if selected
+      if (identityDoc) {
+        const ext = identityDoc.name.split('.').pop();
+        const fileName = `identity_${user.id}_${Date.now()}.${ext}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('identity_docs')
+          .upload(fileName, {
+            uri: identityDoc.uri,
+            type: identityDoc.mimeType || 'application/octet-stream',
+            name: identityDoc.name,
+          });
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          Alert.alert('Upload Error', 'Failed to upload identity document');
+          return;
+        }
+
+        const { data: publicUrl } = supabase.storage
+          .from('identity_docs')
+          .getPublicUrl(fileName);
+        identity_url = publicUrl.publicUrl;
+      }
+
       const updates = {
         ...profile,
         id: user.id,
         latitude: profile.latitude ? parseFloat(profile.latitude) : null,
         longitude: profile.longitude ? parseFloat(profile.longitude) : null,
+        identity_url,
         updated_at: new Date().toISOString(),
         allergies: allergies.split(',').map(a => a.trim().toLowerCase()).filter(a => a.length > 0),
       };
@@ -185,6 +231,23 @@ export default function ProfileScreen() {
       Alert.alert('Error', 'An unexpected error occurred while saving');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ 
+        type: '*/*',
+        copyToCacheDirectory: true,
+      });
+      
+      if (result.type === 'success') {
+        setIdentityDoc(result);
+        Alert.alert('Document Selected', `Selected: ${result.name}`);
+      }
+    } catch (error) {
+      console.error('Document picker error:', error);
+      Alert.alert('Error', 'Failed to select document');
     }
   };
 
@@ -227,7 +290,6 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(profile.email)) {
         Alert.alert('Error', 'Invalid email format');
@@ -235,15 +297,12 @@ export default function ProfileScreen() {
       }
 
       const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
-        redirectTo: `${window.location.origin}/reset-password`, // For web
-        // For React Native, you might need to use a deep link:
-        // redirectTo: 'yourapp://reset-password',
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) {
         console.error('Password reset error:', error);
         
-        // Handle specific error types
         switch (error.message) {
           case 'For security purposes, you can only request this once every 60 seconds':
             Alert.alert('Rate Limited', 'Please wait 60 seconds before requesting another password reset.');
@@ -253,9 +312,6 @@ export default function ProfileScreen() {
             break;
           case 'Email not confirmed':
             Alert.alert('Error', 'Please confirm your email address first.');
-            break;
-          case 'Signup disabled':
-            Alert.alert('Error', 'Password reset is currently disabled.');
             break;
           default:
             Alert.alert('Error', `Failed to send reset email: ${error.message}`);
@@ -344,13 +400,37 @@ export default function ProfileScreen() {
 
       <TextInput
         style={styles.input}
-        placeholder="Phone Number"
+        placeholder="Phone Number (+CountryCode)"
         value={profile.phone_number}
         onChangeText={(val) => setProfile({ ...profile, phone_number: val })}
         keyboardType="phone-pad"
       />
 
-      <Text style={styles.sectionTitle}>📍 Location Info</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Date of Birth (YYYY-MM-DD)"
+        value={profile.date_of_birth}
+        onChangeText={(val) => setProfile({ ...profile, date_of_birth: val })}
+      />
+
+      <Text style={styles.sectionTitle}>🆔 Identity Verification</Text>
+
+      <TouchableOpacity
+        style={[styles.button, styles.documentButton]}
+        onPress={pickDocument}
+      >
+        <Text style={styles.buttonText}>
+          {identityDoc ? '✅ Identity Document Selected' : '📎 Upload Identity Document'}
+        </Text>
+      </TouchableOpacity>
+
+      {identityDoc && (
+        <Text style={styles.selectedDocText}>
+          Selected: {identityDoc.name}
+        </Text>
+      )}
+
+      <Text style={styles.sectionTitle}>📍 Location Information</Text>
 
       <TextInput
         style={styles.input}
@@ -426,6 +506,16 @@ export default function ProfileScreen() {
           onValueChange={(val) => setProfile({ ...profile, expiry_alerts_enabled: val })}
           trackColor={{ false: '#767577', true: '#00A86B' }}
           thumbColor={profile.expiry_alerts_enabled ? '#fff' : '#f4f3f4'}
+        />
+      </View>
+
+      <View style={styles.switchContainer}>
+        <Text style={styles.switchLabel}>Recipe Suggestions:</Text>
+        <Switch
+          value={profile.recipe_suggestions_enabled}
+          onValueChange={(val) => setProfile({ ...profile, recipe_suggestions_enabled: val })}
+          trackColor={{ false: '#767577', true: '#00A86B' }}
+          thumbColor={profile.recipe_suggestions_enabled ? '#fff' : '#f4f3f4'}
         />
       </View>
 
@@ -522,6 +612,12 @@ const styles = StyleSheet.create({
     marginRight: 8,
     marginBottom: 0,
   },
+  selectedDocText: {
+    fontSize: 14,
+    color: '#00A86B',
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
   switchContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -552,6 +648,9 @@ const styles = StyleSheet.create({
   },
   locationButton: {
     backgroundColor: '#007AFF',
+  },
+  documentButton: {
+    backgroundColor: '#888',
   },
   resetButton: {
     backgroundColor: '#FF9500',
