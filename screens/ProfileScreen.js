@@ -40,6 +40,9 @@ export default function ProfileScreen() {
   const [locationLoading, setLocationLoading] = useState(false);
   const [wasteSavedCount, setWasteSavedCount] = useState(0);
   const [allergies, setAllergies] = useState('');
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [verificationLoading, setVerificationLoading] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -84,6 +87,7 @@ export default function ProfileScreen() {
           recipe_suggestions_enabled: data.recipe_suggestions_enabled ?? true,
         });
         setAllergies((data.allergies || []).join(', '));
+        setIsEmailVerified(user.email_confirmed_at !== null);
       }
     } catch (error) {
       console.error('Load profile error:', error);
@@ -114,6 +118,33 @@ export default function ProfileScreen() {
       console.error('Waste stats error:', error);
     }
   }, []);
+
+  const sendVerificationEmail = async () => {
+    try {
+      setVerificationLoading(true);
+      
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: profile.email,
+      });
+
+      if (error) {
+        console.error('Verification error:', error);
+        Alert.alert('Error', error.message);
+      } else {
+        setVerificationSent(true);
+        Alert.alert(
+          'Verification Email Sent',
+          'Please check your email inbox (and spam folder) for the verification link.'
+        );
+      }
+    } catch (error) {
+      console.error('Verification error:', error);
+      Alert.alert('Error', 'Failed to send verification email');
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
 
   const validateProfile = () => {
     const errors = [];
@@ -158,6 +189,32 @@ export default function ProfileScreen() {
         return;
       }
 
+      if (!isEmailVerified) {
+        Alert.alert(
+          'Email Not Verified',
+          'Your email is not yet verified. Some features may be limited until you verify your email address.',
+          [
+            { text: 'Continue Anyway', onPress: () => continueSavingProfile() },
+            {
+              text: 'Send Verification',
+              onPress: sendVerificationEmail
+            }
+          ]
+        );
+        return;
+      }
+
+      await continueSavingProfile();
+    } catch (error) {
+      console.error('Save profile error:', error);
+      Alert.alert('Error', 'An unexpected error occurred while saving');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const continueSavingProfile = async () => {
+    try {
       const {
         data: { user },
         error: userError,
@@ -229,8 +286,7 @@ export default function ProfileScreen() {
     } catch (error) {
       console.error('Save profile error:', error);
       Alert.alert('Error', 'An unexpected error occurred while saving');
-    } finally {
-      setSaving(false);
+      throw error;
     }
   };
 
@@ -397,6 +453,33 @@ export default function ProfileScreen() {
         value={profile.email}
         editable={false}
       />
+
+      {profile.email ? (
+        <View style={styles.verificationContainer}>
+          <Text style={[
+            styles.verificationText,
+            isEmailVerified ? styles.verified : styles.notVerified
+          ]}>
+            {isEmailVerified ? '✅ Email Verified' : '❌ Email Not Verified'}
+          </Text>
+          
+          {!isEmailVerified && (
+            <TouchableOpacity
+              style={[styles.button, styles.verifyButton]}
+              onPress={sendVerificationEmail}
+              disabled={verificationLoading || verificationSent}
+            >
+              <Text style={styles.buttonText}>
+                {verificationLoading 
+                  ? 'Sending...' 
+                  : verificationSent 
+                    ? 'Email Sent!' 
+                    : 'Verify Email'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      ) : null}
 
       <TextInput
         style={styles.input}
@@ -617,6 +700,29 @@ const styles = StyleSheet.create({
     color: '#00A86B',
     marginBottom: 12,
     fontStyle: 'italic',
+  },
+  verificationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  verificationText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  verified: {
+    color: '#00A86B',
+  },
+  notVerified: {
+    color: '#f44336',
+  },
+  verifyButton: {
+    backgroundColor: '#FF9500',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginLeft: 10,
   },
   switchContainer: {
     flexDirection: 'row',
