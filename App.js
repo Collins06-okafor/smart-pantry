@@ -23,6 +23,7 @@ import WasteStatsScreen from './screens/WasteStatsScreen';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
+
 // Bottom Tab Navigator Component
 function MainTabsStack() {
   return (

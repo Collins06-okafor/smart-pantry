@@ -120,6 +120,13 @@ export default function AddItemScreen({ route, navigation }) {
   const [calculatedExpirationDate, setCalculatedExpirationDate] = useState(null);
   const [showExpirationWarning, setShowExpirationWarning] = useState(false);
 
+  useEffect(() => {
+  // Reset form when component mounts unless editing
+  if (!route.params?.item) {
+    resetForm();
+  }
+}, [route.params?.item]);
+
   // Calculate effective expiration date when item is opened
   useEffect(() => {
     if (isOpened && openingDate) {
@@ -267,62 +274,84 @@ export default function AddItemScreen({ route, navigation }) {
   };
 
   const handleSave = async () => {
-    if (!itemName.trim() || !quantity || !expirationDate) {
-      Alert.alert('Validation Error', 'Please fill all required fields.');
+  if (!itemName.trim() || !quantity || !expirationDate) {
+    Alert.alert('Validation Error', 'Please fill all required fields.');
+    return;
+  }
+
+  const quantityNum = parseFloat(quantity);
+  if (isNaN(quantityNum) || quantityNum <= 0) {
+    Alert.alert('Validation Error', 'Please enter a valid quantity.');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      Alert.alert('Auth Error', 'You must be logged in.');
       return;
     }
 
-    const quantityNum = parseFloat(quantity);
-    if (isNaN(quantityNum) || quantityNum <= 0) {
-      Alert.alert('Validation Error', 'Please enter a valid quantity.');
-      return;
+    const item = {
+      user_id: user.id,
+      item_name: itemName.trim(),
+      food_category: foodCategory,
+      quantity: quantityNum,
+      quantity_unit: quantityUnit,
+      expiration_date: formatDateForDatabase(expirationDate),
+      is_opened: isOpened,
+      opening_date: isOpened ? formatDateForDatabase(openingDate) : null,
+      storage_condition: isOpened ? storageCondition : null,
+      description: description.trim() || null,
+      image_url: itemImage,
+    };
+
+    const response = editingItem
+      ? await supabase.from('pantry_items').update(item).eq('id', editingItem.id)
+      : await supabase.from('pantry_items').insert(item);
+
+    if (response.error) {
+      console.error('Save error:', response.error);
+      Alert.alert('Save Failed', response.error.message);
+    } else {
+      console.log('Item saved successfully');
+      
+      // Reset all form fields
+      resetForm();
+      
+      Alert.alert('Success', `Item ${editingItem ? 'updated' : 'added'} successfully!`, [
+        { 
+          text: 'OK', 
+          onPress: () => navigation.navigate('Pantry') 
+        },
+      ]);
     }
+  } catch (error) {
+    console.error('Save error:', error);
+    Alert.alert('Error', 'An unexpected error occurred.');
+  } finally {
+    setLoading(false);
+  }
+};
 
-    setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        Alert.alert('Auth Error', 'You must be logged in.');
-        return;
-      }
-
-      const item = {
-        user_id: user.id,
-        item_name: itemName.trim(),
-        food_category: foodCategory,
-        quantity: quantityNum,
-        quantity_unit: quantityUnit,
-        expiration_date: formatDateForDatabase(expirationDate),
-        is_opened: isOpened,
-        opening_date: isOpened ? formatDateForDatabase(openingDate) : null,
-        storage_condition: isOpened ? storageCondition : null,
-        description: description.trim() || null,
-        image_url: itemImage,
-      };
-
-      console.log('Saving item:', item);
-
-      const response = editingItem
-        ? await supabase.from('pantry_items').update(item).eq('id', editingItem.id)
-        : await supabase.from('pantry_items').insert(item);
-
-      if (response.error) {
-        console.error('Save error:', response.error);
-        Alert.alert('Save Failed', response.error.message);
-      } else {
-        console.log('Item saved successfully');
-        Alert.alert('Success', `Item ${editingItem ? 'updated' : 'added'} successfully!`, [
-          { text: 'OK', onPress: () => navigation.navigate('Pantry') },
-        ]);
-      }
-    } catch (error) {
-      console.error('Save error:', error);
-      Alert.alert('Error', 'An unexpected error occurred.');
-    } finally {
-      setLoading(false);
-    }
-  };
+const resetForm = () => {
+  setItemName('');
+  setFoodCategory('other');
+  setQuantity('1');
+  setQuantityUnit('pieces');
+  setExpirationDate(() => {
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() + 7);
+    return defaultDate;
+  });
+  setIsOpened(false);
+  setOpeningDate(new Date());
+  setStorageCondition('refrigerated');
+  setDescription('');
+  setItemImage(null);
+};
 
   const UnitPickerModal = () => (
     <Modal

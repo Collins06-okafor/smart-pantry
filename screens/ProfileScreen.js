@@ -86,7 +86,14 @@ export default function ProfileScreen() {
           expiry_alerts_enabled: data.expiry_alerts_enabled ?? true,
           recipe_suggestions_enabled: data.recipe_suggestions_enabled ?? true,
         });
-        setAllergies((data.allergies || []).join(', '));
+        setAllergies(
+  Array.isArray(data.allergies)
+    ? data.allergies.join(', ')
+    : typeof data.allergies === 'string'
+    ? data.allergies
+    : ''
+);
+
         setIsEmailVerified(user.email_confirmed_at !== null);
       }
     } catch (error) {

@@ -462,44 +462,46 @@ export default function ShareScreen({ navigation }) {
   }, [currentUser?.id, refreshAllData]);
 
   const handleShareItem = useCallback(async (itemId) => {
-    if (!currentUser) return;
-    
-    try {
-      const { data: existingShare, error: checkError } = await supabase
-        .from('shared_items')
-        .select('id')
-        .eq('item_id', itemId)
-        .eq('user_id', currentUser.id)
-        .single();
+  if (!currentUser) return;
+  
+  try {
+    // Check if item is already shared
+    const { data: existingShare, error: checkError } = await supabase
+      .from('shared_items')
+      .select('id')
+      .eq('item_id', itemId)
+      .eq('user_id', currentUser.id)
+      .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
 
-      if (checkError && checkError.code !== 'PGRST116') {
-        throw checkError;
-      }
-
-      if (existingShare) {
-        Alert.alert("Already Shared", "This item is already being shared.");
-        return;
-      }
-
-      const { error } = await supabase
-        .from('shared_items')
-        .insert({
-          item_id: itemId,
-          user_id: currentUser.id,
-          status: STATUSES.AVAILABLE,
-          offered_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
-
-      Alert.alert('Success', 'Item shared with your neighbors!');
-      shareModal.close();
-      await refreshAllData();
-    } catch (err) {
-      console.error('Share error:', err);
-      Alert.alert('Error', 'Failed to share item. Please try again.');
+    if (checkError && checkError.code !== 'PGRST116') {
+      throw checkError;
     }
-  }, [currentUser, shareModal, refreshAllData]);
+
+    if (existingShare && existingShare.length > 0) {
+      Alert.alert("Already Shared", "This item is already being shared.");
+      return;
+    }
+
+    // Insert new shared item
+    const { error } = await supabase
+      .from('shared_items')
+      .insert({
+        item_id: itemId,
+        user_id: currentUser.id,
+        status: STATUSES.AVAILABLE,
+        offered_at: new Date().toISOString()
+      });
+
+    if (error) throw error;
+
+    Alert.alert('Success', 'Item shared with your neighbors!');
+    shareModal.close();
+    await refreshAllData(); // Refresh all data to update both My Shared and My Pantry lists
+  } catch (err) {
+    console.error('Share error:', err);
+    Alert.alert('Error', 'Failed to share item. Please try again.');
+  }
+}, [currentUser, shareModal, refreshAllData]);
 
   const handleOfferHelp = useCallback(async (requestId) => {
     try {
