@@ -12,6 +12,10 @@ import {
   TextInput,
   SafeAreaView,
   StatusBar,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  TouchableWithoutFeedback
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DiscardItemModal from './DiscardItemModal';
@@ -452,26 +456,34 @@ export default function PantryScreen({ navigation }) {
       {pantryItems.length === 0 ? (
         renderEmptyState()
       ) : (
-        <>
-          <FlatList
-            data={pantryItems}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={renderItem}
-            ListHeaderComponent={renderHeader}
-            contentContainerStyle={styles.listContainer}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#00C897']}
-                tintColor="#00C897"
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidingContainer}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.contentContainer}>
+              <FlatList
+                data={pantryItems}
+                keyExtractor={(item) => String(item.id)}
+                renderItem={renderItem}
+                ListHeaderComponent={renderHeader}
+                contentContainerStyle={styles.listContainer}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    colors={['#00C897']}
+                    tintColor="#00C897"
+                  />
+                }
+                showsVerticalScrollIndicator={false}
               />
-            }
-            showsVerticalScrollIndicator={false}
-          />
-          
-          {renderDiscardAnalytics()}
-        </>
+              
+              {renderDiscardAnalytics()}
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       )}
 
       {/* Discard Modal */}
@@ -498,45 +510,52 @@ export default function PantryScreen({ navigation }) {
         visible={editModalVisible}
         onRequestClose={cancelEdit}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Item</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalKeyboardAvoidingView}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Edit Item</Text>
 
-            <Text style={styles.label}>Item Name</Text>
-            <TextInput
-              style={styles.input}
-              value={editForm.item_name}
-              onChangeText={(text) => setEditForm(prev => ({ ...prev, item_name: text }))}
-              placeholder="Enter item name"
-            />
+                <Text style={styles.label}>Item Name</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editForm.item_name}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, item_name: text }))}
+                  placeholder="Enter item name"
+                />
 
-            <Text style={styles.label}>Quantity</Text>
-            <TextInput
-              style={styles.input}
-              value={editForm.quantity}
-              keyboardType="numeric"
-              onChangeText={(text) => setEditForm(prev => ({ ...prev, quantity: text }))}
-              placeholder="Enter quantity"
-            />
+                <Text style={styles.label}>Quantity</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editForm.quantity}
+                  keyboardType="numeric"
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, quantity: text }))}
+                  placeholder="Enter quantity"
+                />
 
-            <Text style={styles.label}>Expiration Date</Text>
-            <TextInput
-              style={styles.input}
-              value={editForm.expiration_date}
-              onChangeText={(text) => setEditForm(prev => ({ ...prev, expiration_date: text }))}
-              placeholder="YYYY-MM-DD"
-            />
+                <Text style={styles.label}>Expiration Date</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editForm.expiration_date}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, expiration_date: text }))}
+                  placeholder="YYYY-MM-DD"
+                />
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelButton} onPress={cancelEdit}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.saveButton} onPress={saveEdit}>
-                <Text style={styles.saveButtonText}>Save Changes</Text>
-              </TouchableOpacity>
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity style={styles.cancelButton} onPress={cancelEdit}>
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.saveButton} onPress={saveEdit}>
+                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </View>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Share Modal */}
@@ -546,34 +565,41 @@ export default function PantryScreen({ navigation }) {
         visible={shareModalVisible}
         onRequestClose={cancelShare}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Share Item</Text>
-            
-            {selectedItemForShare && (
-              <View style={styles.shareItemPreview}>
-                <Text style={styles.shareItemName}>{selectedItemForShare.item_name}</Text>
-                <Text style={styles.shareItemDetail}>Quantity: {selectedItemForShare.quantity}</Text>
-                <Text style={styles.shareItemDetail}>
-                  Expires: {formatDate(selectedItemForShare.expiration_date)}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalKeyboardAvoidingView}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Share Item</Text>
+                
+                {selectedItemForShare && (
+                  <View style={styles.shareItemPreview}>
+                    <Text style={styles.shareItemName}>{selectedItemForShare.item_name}</Text>
+                    <Text style={styles.shareItemDetail}>Quantity: {selectedItemForShare.quantity}</Text>
+                    <Text style={styles.shareItemDetail}>
+                      Expires: {formatDate(selectedItemForShare.expiration_date)}
+                    </Text>
+                  </View>
+                )}
+
+                <Text style={styles.shareDescription}>
+                  Share this item with your neighbors. They'll be able to see and request it.
                 </Text>
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity style={styles.cancelButton} onPress={cancelShare}>
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.shareConfirmButton} onPress={shareItem}>
+                    <Text style={styles.shareConfirmButtonText}>📤 Share Item</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            )}
-
-            <Text style={styles.shareDescription}>
-              Share this item with your neighbors. They'll be able to see and request it.
-            </Text>
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.cancelButton} onPress={cancelShare}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.shareConfirmButton} onPress={shareItem}>
-                <Text style={styles.shareConfirmButtonText}>📤 Share Item</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -583,6 +609,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  keyboardAvoidingContainer: {
+    flex: 1,
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  modalKeyboardAvoidingView: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,

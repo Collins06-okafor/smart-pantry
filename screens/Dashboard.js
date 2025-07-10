@@ -287,6 +287,15 @@ const Dashboard = ({ navigation }) => {
             <Text style={styles.cardTitle}>📉 Waste Statistics</Text>
             <Text style={styles.cardSubtitle}>Track your food waste</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+  style={styles.expiringCard}
+  onPress={() => navigation.navigate('ExpiringItems')}
+>
+  <Text style={styles.cardTitle}>⚠️ View Expiring Items</Text>
+  <Text style={styles.cardSubtitle}>Check items that are about to expire</Text>
+</TouchableOpacity>
+
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -547,6 +556,25 @@ discardedStatHighlight: {
   fontWeight: '700',
   color: '#333',
 },
+expiringCard: {
+  backgroundColor: '#ffe8e8',
+  padding: 16,
+  borderRadius: 12,
+  marginTop: 16,
+  borderLeftWidth: 6,
+  borderLeftColor: '#e74c3c',
+},
+cardTitle: {
+  fontSize: 18,
+  fontWeight: 'bold',
+  color: '#c0392b',
+},
+cardSubtitle: {
+  fontSize: 14,
+  color: '#555',
+  marginTop: 4,
+},
+
 });
 
 export default Dashboard;
