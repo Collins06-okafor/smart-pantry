@@ -44,6 +44,130 @@ export default function ProfileScreen() {
   const [verificationSent, setVerificationSent] = useState(false);
   const [verificationLoading, setVerificationLoading] = useState(false);
 
+  // Enhanced phone number validation function
+  const validatePhoneNumber = (phoneNumber) => {
+    // Remove any non-digit characters except the + sign
+    const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+    
+    // Must start with +
+    if (!cleanNumber.startsWith('+')) {
+      return { isValid: false, error: 'Phone number must start with country code (+)' };
+    }
+    
+    // Extract country code and number
+    const numberWithoutPlus = cleanNumber.slice(1);
+    
+    // Common country code patterns and their max lengths
+    const countryCodeRules = {
+      // 1-digit country codes
+      '1': 11,   // US/Canada: +1 + 10 digits
+      '7': 11,   // Russia/Kazakhstan: +7 + 10 digits
+      
+      // 2-digit country codes
+      '20': 12,  // Egypt: +20 + 10 digits
+      '27': 11,  // South Africa: +27 + 9 digits
+      '30': 12,  // Greece: +30 + 10 digits
+      '31': 11,  // Netherlands: +31 + 9 digits
+      '32': 11,  // Belgium: +32 + 9 digits
+      '33': 11,  // France: +33 + 9 digits
+      '34': 11,  // Spain: +34 + 9 digits
+      '36': 11,  // Hungary: +36 + 9 digits
+      '39': 12,  // Italy: +39 + 10 digits
+      '40': 11,  // Romania: +40 + 9 digits
+      '41': 11,  // Switzerland: +41 + 9 digits
+      '43': 12,  // Austria: +43 + 10 digits
+      '44': 12,  // UK: +44 + 10 digits
+      '45': 10,  // Denmark: +45 + 8 digits
+      '46': 11,  // Sweden: +46 + 9 digits
+      '47': 10,  // Norway: +47 + 8 digits
+      '48': 11,  // Poland: +48 + 9 digits
+      '49': 12,  // Germany: +49 + 10 digits
+      '52': 12,  // Mexico: +52 + 10 digits
+      '53': 10,  // Cuba: +53 + 8 digits
+      '54': 12,  // Argentina: +54 + 10 digits
+      '55': 13,  // Brazil: +55 + 11 digits
+      '56': 11,  // Chile: +56 + 9 digits
+      '57': 12,  // Colombia: +57 + 10 digits
+      '58': 11,  // Venezuela: +58 + 10 digits
+      '60': 11,  // Malaysia: +60 + 9 digits
+      '61': 11,  // Australia: +61 + 9 digits
+      '62': 12,  // Indonesia: +62 + 10 digits
+      '63': 12,  // Philippines: +63 + 10 digits
+      '64': 11,  // New Zealand: +64 + 9 digits
+      '65': 10,  // Singapore: +65 + 8 digits
+      '66': 11,  // Thailand: +66 + 9 digits
+      '81': 12,  // Japan: +81 + 10 digits
+      '82': 12,  // South Korea: +82 + 10 digits
+      '84': 11,  // Vietnam: +84 + 9 digits
+      '86': 13,  // China: +86 + 11 digits
+      '90': 13,  // Turkey: +90 + 10 digits
+      '91': 12,  // India: +91 + 10 digits
+      '92': 12,  // Pakistan: +92 + 10 digits
+      '93': 11,  // Afghanistan: +93 + 9 digits
+      '94': 11,  // Sri Lanka: +94 + 9 digits
+      '95': 11,  // Myanmar: +95 + 9 digits
+      '98': 12,  // Iran: +98 + 10 digits
+    };
+    
+    // Find matching country code
+    let maxLength = 15; // Default international max
+    let matchedCountryCode = '';
+    
+    // Check for 1-digit country codes first
+    if (countryCodeRules[numberWithoutPlus.slice(0, 1)]) {
+      matchedCountryCode = numberWithoutPlus.slice(0, 1);
+      maxLength = countryCodeRules[matchedCountryCode];
+    }
+    // Then check for 2-digit country codes
+    else if (countryCodeRules[numberWithoutPlus.slice(0, 2)]) {
+      matchedCountryCode = numberWithoutPlus.slice(0, 2);
+      maxLength = countryCodeRules[matchedCountryCode];
+    }
+    // Then check for 3-digit country codes
+    else if (countryCodeRules[numberWithoutPlus.slice(0, 3)]) {
+      matchedCountryCode = numberWithoutPlus.slice(0, 3);
+      maxLength = countryCodeRules[matchedCountryCode];
+    }
+    
+    // Check total length
+    if (cleanNumber.length > maxLength) {
+      return { 
+        isValid: false, 
+        error: `Phone number too long. Maximum ${maxLength} digits for this country code.`,
+        maxLength 
+      };
+    }
+    
+    // Minimum length check (country code + at least 6 digits)
+    if (cleanNumber.length < 8) {
+      return { 
+        isValid: false, 
+        error: 'Phone number too short. Must include country code and at least 6 digits.' 
+      };
+    }
+    
+    return { isValid: true, cleanNumber, maxLength };
+  };
+
+  // Enhanced phone number input handler
+  const handlePhoneNumberChange = (value) => {
+    // Remove any non-digit characters except +
+    let cleanValue = value.replace(/[^\d+]/g, '');
+    
+    // Ensure it starts with + if user types digits
+    if (cleanValue && !cleanValue.startsWith('+')) {
+      cleanValue = '+' + cleanValue;
+    }
+    
+    // Validate and limit length
+    const validation = validatePhoneNumber(cleanValue);
+    
+    if (validation.isValid || cleanValue.length <= (validation.maxLength || 15)) {
+      setProfile({ ...profile, phone_number: cleanValue });
+    }
+    // If it's too long, don't update the state (prevent typing)
+  };
+
   useEffect(() => {
     loadProfile();
     fetchWasteStats();
@@ -87,12 +211,12 @@ export default function ProfileScreen() {
           recipe_suggestions_enabled: data.recipe_suggestions_enabled ?? true,
         });
         setAllergies(
-  Array.isArray(data.allergies)
-    ? data.allergies.join(', ')
-    : typeof data.allergies === 'string'
-    ? data.allergies
-    : ''
-);
+          Array.isArray(data.allergies)
+            ? data.allergies.join(', ')
+            : typeof data.allergies === 'string'
+            ? data.allergies
+            : ''
+        );
 
         setIsEmailVerified(user.email_confirmed_at !== null);
       }
@@ -161,9 +285,12 @@ export default function ProfileScreen() {
     if (!surname?.trim()) errors.push('Surname is required');
     if (!email?.trim()) errors.push('Email is required');
 
-    // Phone validation with country code
-    if (phone_number && !/^\+\d{6,15}$/.test(phone_number)) {
-      errors.push('Phone number must include country code (e.g., +905551234567)');
+    // Enhanced phone validation
+    if (phone_number) {
+      const phoneValidation = validatePhoneNumber(phone_number);
+      if (!phoneValidation.isValid) {
+        errors.push(phoneValidation.error);
+      }
     }
 
     // Age validation
@@ -492,9 +619,14 @@ export default function ProfileScreen() {
         style={styles.input}
         placeholder="Phone Number (+CountryCode)"
         value={profile.phone_number}
-        onChangeText={(val) => setProfile({ ...profile, phone_number: val })}
+        onChangeText={handlePhoneNumberChange}
         keyboardType="phone-pad"
+        maxLength={15}
       />
+      
+      <Text style={styles.helperText}>
+        Format: +905551234567 (include country code)
+      </Text>
 
       <TextInput
         style={styles.input}
@@ -691,6 +823,13 @@ const styles = StyleSheet.create({
   disabledInput: {
     backgroundColor: '#f5f5f5',
     color: '#666',
+  },
+  helperText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: -8,
+    marginBottom: 12,
+    fontStyle: 'italic',
   },
   coordinatesContainer: {
     flexDirection: 'row',

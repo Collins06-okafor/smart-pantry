@@ -18,6 +18,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { supabase } from '../lib/supabase';
 
+
 const { width } = Dimensions.get('window');
 
 // Common units for pantry items
@@ -43,30 +44,6 @@ const QUANTITY_UNITS = [
 
 // Food safety guidelines for opened items (in days)
 const OPENED_ITEM_SHELF_LIFE = {
-  // Meat & Seafood
-  'beef': { refrigerated: 3, room_temp: 0.125, frozen: 90 }, // 3 hours at room temp
-  'chicken': { refrigerated: 2, room_temp: 0.125, frozen: 90 },
-  'pork': { refrigerated: 3, room_temp: 0.125, frozen: 90 },
-  'fish': { refrigerated: 2, room_temp: 0.125, frozen: 60 },
-  'seafood': { refrigerated: 2, room_temp: 0.125, frozen: 60 },
-  
-  // Dairy
-  'milk': { refrigerated: 7, room_temp: 0.125, frozen: 90 },
-  'cheese': { refrigerated: 14, room_temp: 0.25, frozen: 180 },
-  'yogurt': { refrigerated: 7, room_temp: 0.125, frozen: 60 },
-  'butter': { refrigerated: 30, room_temp: 1, frozen: 365 },
-  
-  // Prepared Foods
-  'cooked_meat': { refrigerated: 4, room_temp: 0.125, frozen: 90 },
-  'soup': { refrigerated: 4, room_temp: 0.125, frozen: 90 },
-  'leftover': { refrigerated: 4, room_temp: 0.125, frozen: 90 },
-  
-  // Condiments & Sauces
-  'sauce': { refrigerated: 30, room_temp: 2, frozen: 180 },
-  'ketchup': { refrigerated: 30, room_temp: 30, frozen: 365 },
-  'mayonnaise': { refrigerated: 60, room_temp: 0.125, frozen: 365 },
-  
-  // Default for unknown items
   'default': { refrigerated: 3, room_temp: 0.125, frozen: 30 }
 };
 
@@ -76,20 +53,10 @@ const STORAGE_CONDITIONS = [
   { value: 'frozen', label: 'Frozen (-18°C)', icon: '🧊' },
 ];
 
-const FOOD_CATEGORIES = [
-  'beef', 'chicken', 'pork', 'fish', 'seafood',
-  'milk', 'cheese', 'yogurt', 'butter',
-  'cooked_meat', 'soup', 'leftover',
-  'sauce', 'ketchup', 'mayonnaise',
-  'other'
-];
-
 export default function AddItemScreen({ route, navigation }) {
   const editingItem = route.params?.item ?? null;
 
   const [itemName, setItemName] = useState(editingItem?.item_name || '');
-  const [foodCategory, setFoodCategory] = useState(editingItem?.food_category || 'other');
-  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [quantity, setQuantity] = useState(editingItem?.quantity?.toString() || '1');
   const [quantityUnit, setQuantityUnit] = useState(editingItem?.quantity_unit || 'pieces');
   const [showUnitPicker, setShowUnitPicker] = useState(false);
@@ -121,11 +88,10 @@ export default function AddItemScreen({ route, navigation }) {
   const [showExpirationWarning, setShowExpirationWarning] = useState(false);
 
   useEffect(() => {
-  // Reset form when component mounts unless editing
-  if (!route.params?.item) {
-    resetForm();
-  }
-}, [route.params?.item]);
+    if (!route.params?.item) {
+      resetForm();
+    }
+  }, [route.params?.item]);
 
   // Calculate effective expiration date when item is opened
   useEffect(() => {
@@ -135,11 +101,10 @@ export default function AddItemScreen({ route, navigation }) {
       setCalculatedExpirationDate(null);
       setShowExpirationWarning(false);
     }
-  }, [isOpened, openingDate, storageCondition, foodCategory, expirationDate]);
+  }, [isOpened, openingDate, storageCondition, expirationDate]);
 
   const calculateEffectiveExpiration = () => {
-    const category = FOOD_CATEGORIES.includes(foodCategory) ? foodCategory : 'default';
-    const shelfLife = OPENED_ITEM_SHELF_LIFE[category] || OPENED_ITEM_SHELF_LIFE.default;
+    const shelfLife = OPENED_ITEM_SHELF_LIFE.default;
     const daysToAdd = shelfLife[storageCondition] || shelfLife.refrigerated;
     
     const effectiveDate = new Date(openingDate);
@@ -274,84 +239,82 @@ export default function AddItemScreen({ route, navigation }) {
   };
 
   const handleSave = async () => {
-  if (!itemName.trim() || !quantity || !expirationDate) {
-    Alert.alert('Validation Error', 'Please fill all required fields.');
-    return;
-  }
-
-  const quantityNum = parseFloat(quantity);
-  if (isNaN(quantityNum) || quantityNum <= 0) {
-    Alert.alert('Validation Error', 'Please enter a valid quantity.');
-    return;
-  }
-
-  setLoading(true);
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      Alert.alert('Auth Error', 'You must be logged in.');
+    if (!itemName.trim() || !quantity || !expirationDate) {
+      Alert.alert('Validation Error', 'Please fill all required fields.');
       return;
     }
 
-    const item = {
-      user_id: user.id,
-      item_name: itemName.trim(),
-      food_category: foodCategory,
-      quantity: quantityNum,
-      quantity_unit: quantityUnit,
-      expiration_date: formatDateForDatabase(expirationDate),
-      is_opened: isOpened,
-      opening_date: isOpened ? formatDateForDatabase(openingDate) : null,
-      storage_condition: isOpened ? storageCondition : null,
-      description: description.trim() || null,
-      image_url: itemImage,
-    };
-
-    const response = editingItem
-      ? await supabase.from('pantry_items').update(item).eq('id', editingItem.id)
-      : await supabase.from('pantry_items').insert(item);
-
-    if (response.error) {
-      console.error('Save error:', response.error);
-      Alert.alert('Save Failed', response.error.message);
-    } else {
-      console.log('Item saved successfully');
-      
-      // Reset all form fields
-      resetForm();
-      
-      Alert.alert('Success', `Item ${editingItem ? 'updated' : 'added'} successfully!`, [
-        { 
-          text: 'OK', 
-          onPress: () => navigation.navigate('Pantry') 
-        },
-      ]);
+    const quantityNum = parseFloat(quantity);
+    if (isNaN(quantityNum) || quantityNum <= 0) {
+      Alert.alert('Validation Error', 'Please enter a valid quantity.');
+      return;
     }
-  } catch (error) {
-    console.error('Save error:', error);
-    Alert.alert('Error', 'An unexpected error occurred.');
-  } finally {
-    setLoading(false);
-  }
-};
 
-const resetForm = () => {
-  setItemName('');
-  setFoodCategory('other');
-  setQuantity('1');
-  setQuantityUnit('pieces');
-  setExpirationDate(() => {
-    const defaultDate = new Date();
-    defaultDate.setDate(defaultDate.getDate() + 7);
-    return defaultDate;
-  });
-  setIsOpened(false);
-  setOpeningDate(new Date());
-  setStorageCondition('refrigerated');
-  setDescription('');
-  setItemImage(null);
-};
+    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        Alert.alert('Auth Error', 'You must be logged in.');
+        return;
+      }
+
+      const item = {
+        user_id: user.id,
+        item_name: itemName.trim(),
+        quantity: quantityNum,
+        quantity_unit: quantityUnit,
+        expiration_date: formatDateForDatabase(expirationDate),
+        is_opened: isOpened,
+        opening_date: isOpened ? formatDateForDatabase(openingDate) : null,
+        storage_condition: isOpened ? storageCondition : null,
+        description: description.trim() || null,
+        image_url: itemImage,
+      };
+
+      const response = editingItem
+        ? await supabase.from('pantry_items').update(item).eq('id', editingItem.id)
+        : await supabase.from('pantry_items').insert(item);
+
+      if (response.error) {
+        console.error('Save error:', response.error);
+        Alert.alert('Save Failed', response.error.message);
+      } else {
+        console.log('Item saved successfully');
+        
+        // Reset all form fields
+        resetForm();
+        
+        Alert.alert('Success', `Item ${editingItem ? 'updated' : 'added'} successfully!`, [
+          { 
+            text: 'OK', 
+            onPress: () => navigation.navigate('Pantry') 
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error('Save error:', error);
+      Alert.alert('Error', 'An unexpected error occurred.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setItemName('');
+    setQuantity('1');
+    setQuantityUnit('pieces');
+    setExpirationDate(() => {
+      const defaultDate = new Date();
+      defaultDate.setDate(defaultDate.getDate() + 7);
+      return defaultDate;
+    });
+    setIsOpened(false);
+    setOpeningDate(new Date());
+    setStorageCondition('refrigerated');
+    setDescription('');
+    setItemImage(null);
+  };
 
   const UnitPickerModal = () => (
     <Modal
@@ -386,48 +349,6 @@ const resetForm = () => {
                   quantityUnit === unit && styles.unitOptionTextSelected
                 ]}>
                   {unit}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
-
-  const CategoryPickerModal = () => (
-    <Modal
-      visible={showCategoryPicker}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowCategoryPicker(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Food Category</Text>
-            <TouchableOpacity onPress={() => setShowCategoryPicker(false)}>
-              <Text style={styles.modalCloseButton}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={styles.categoryList}>
-            {FOOD_CATEGORIES.map((category) => (
-              <TouchableOpacity
-                key={category}
-                style={[
-                  styles.categoryOption,
-                  foodCategory === category && styles.categoryOptionSelected
-                ]}
-                onPress={() => {
-                  setFoodCategory(category);
-                  setShowCategoryPicker(false);
-                }}
-              >
-                <Text style={[
-                  styles.categoryOptionText,
-                  foodCategory === category && styles.categoryOptionTextSelected
-                ]}>
-                  {category.replace('_', ' ').toUpperCase()}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -538,17 +459,6 @@ const resetForm = () => {
         placeholderTextColor="#999"
         autoCapitalize="words"
       />
-
-      <Text style={styles.label}>Food Category *</Text>
-      <TouchableOpacity
-        style={styles.categoryButton}
-        onPress={() => setShowCategoryPicker(true)}
-      >
-        <Text style={styles.categoryButtonText}>
-          {foodCategory.replace('_', ' ').toUpperCase()}
-        </Text>
-        <Text style={styles.categoryButtonIcon}>⌄</Text>
-      </TouchableOpacity>
 
       <View style={styles.quantityContainer}>
         <View style={styles.quantityInputContainer}>
@@ -750,7 +660,6 @@ const resetForm = () => {
       </TouchableOpacity>
 
       <UnitPickerModal />
-      <CategoryPickerModal />
       <StoragePickerModal />
       <ImageOptionsModal />
     </ScrollView>
@@ -784,25 +693,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9f9f9',
     marginBottom: 10,
     fontSize: 16,
-  },
-  categoryButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#f9f9f9',
-    marginBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  categoryButtonText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  categoryButtonIcon: {
-    fontSize: 16,
-    color: '#666',
   },
   quantityContainer: {
     flexDirection: 'row',
@@ -1074,25 +964,6 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   unitOptionTextSelected: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  categoryList: {
-    maxHeight: 300,
-  },
-  categoryOption: {
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  categoryOptionSelected: {
-    backgroundColor: '#00C897',
-  },
-  categoryOptionText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  categoryOptionTextSelected: {
     color: '#fff',
     fontWeight: 'bold',
   },

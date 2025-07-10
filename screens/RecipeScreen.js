@@ -189,32 +189,6 @@ export default function RecipeScreen() {
     }
   };
 
-  const fetchRecipesByCategory = async (cuisine = '', diet = '') => {
-    setLoading(true);
-    try {
-      let url = `https://api.spoonacular.com/recipes/complexSearch?number=10&apiKey=${API_KEY}&addRecipeInformation=true`;
-      if (cuisine) url += `&cuisine=${cuisine}`;
-      if (diet) url += `&diet=${diet}`;
-
-      const response = await fetch(url);
-      const result = await response.json();
-
-      if (result.results && Array.isArray(result.results)) {
-        const filtered = filterRecipesByAllergy(result.results);
-        setRecipes(filtered);
-        setError('');
-      } else {
-        setRecipes([]);
-        setError('No recipes found for this category.');
-      }
-    } catch (err) {
-      console.error('Category recipes error:', err.message);
-      setError('Failed to fetch category recipes.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setError('');
@@ -248,8 +222,6 @@ export default function RecipeScreen() {
     };
      const caloriesInfo = item?.nutrition?.nutrients?.find(n => n.name === 'Calories');
 
-
-
     return (
       <View style={styles.card}>
         <Image source={{ uri: recipeData.image }} style={styles.image} />
@@ -265,7 +237,6 @@ export default function RecipeScreen() {
         {caloriesInfo && (
   <Text style={styles.metaText}>🔥 {Math.round(caloriesInfo.amount)} {caloriesInfo.unit} Calories</Text>
 )}
-
 
         {recipeData.usedIngredients?.length > 0 && (
           <Text style={styles.ingredients}>
@@ -341,47 +312,6 @@ export default function RecipeScreen() {
     </View>
   );
 
-  const renderQuickFilters = () => (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersContainer}>
-      <TouchableOpacity
-        style={styles.filterButton}
-        onPress={() => fetchRecipesByCategory('african')}
-      >
-        <Text style={styles.filterText}>🍲 Nigerian</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.filterButton}
-        onPress={() => fetchRecipesByCategory('italian')}
-      >
-        <Text style={styles.filterText}>🍝 Italian</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.filterButton}
-        onPress={() => fetchRecipesByCategory('asian')}
-      >
-        <Text style={styles.filterText}>🍜 Asian</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.filterButton}
-        onPress={() => fetchRecipesByCategory('mexican')}
-      >
-        <Text style={styles.filterText}>🌮 Mexican</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.filterButton}
-        onPress={() => fetchRecipesByCategory('', 'vegetarian')}
-      >
-        <Text style={styles.filterText}>🥗 Vegetarian</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={styles.filterButton}
-        onPress={() => fetchRecipesByCategory('', 'vegan')}
-      >
-        <Text style={styles.filterText}>🌱 Vegan</Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-
   // Add allergy indicator if user has allergies
   const renderAllergyIndicator = () => {
     if (userAllergies.length === 0) return null;
@@ -422,7 +352,6 @@ export default function RecipeScreen() {
       {activeTab === 'search' && (
         <>
           {renderSearchBar()}
-          {renderQuickFilters()}
         </>
       )}
 
@@ -535,22 +464,6 @@ const styles = StyleSheet.create({
   searchButtonText: {
     color: '#fff',
     fontWeight: '600',
-  },
-  filtersContainer: {
-    marginBottom: 16,
-  },
-  filterButton: {
-    backgroundColor: '#f8f8f8',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  filterText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   basedOnText: {
     fontSize: 12,
