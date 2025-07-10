@@ -1,15 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Dimensions, ActivityIndicator, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  Dimensions,
+  ActivityIndicator,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
 import { BarChart, PieChart } from 'react-native-chart-kit';
 import { supabase } from '../lib/supabase';
-
 
 const screenWidth = Dimensions.get('window').width;
 
 const REASONS = ['all', 'expired', 'spoiled', 'unwanted', 'damaged'];
 const pieColors = ['#FF6384', '#36A2EB', '#FFCE56', '#8BC34A', '#FF9800', '#9C27B0', '#00ACC1'];
 
-export default function WasteStatsScreen({ navigation }) {
+export default function WasteStatsScreen() {
   const [loading, setLoading] = useState(true);
   const [chartData, setChartData] = useState({ labels: [], datasets: [{ data: [] }] });
   const [pieData, setPieData] = useState([]);
@@ -44,7 +51,7 @@ export default function WasteStatsScreen({ navigation }) {
     }
 
     const grouped = {};
-    data.forEach(item => {
+    data.forEach((item) => {
       const date = new Date(item.discarded_at).toISOString().split('T')[0];
       grouped[date] = (grouped[date] || 0) + 1;
     });
@@ -52,8 +59,8 @@ export default function WasteStatsScreen({ navigation }) {
     const sortedDates = Object.keys(grouped).sort();
 
     setChartData({
-      labels: sortedDates.map(d => d.slice(5)), // MM-DD
-      datasets: [{ data: sortedDates.map(d => grouped[d]) }],
+      labels: sortedDates.map((d) => d.slice(5)), // MM-DD
+      datasets: [{ data: sortedDates.map((d) => grouped[d]) }],
     });
 
     setLoading(false);
@@ -76,7 +83,7 @@ export default function WasteStatsScreen({ navigation }) {
       if (error) throw error;
 
       const reasonCounts = {};
-      data.forEach(item => {
+      data.forEach((item) => {
         const reason = item.reason || 'Unknown';
         reasonCounts[reason] = (reasonCounts[reason] || 0) + 1;
       });
@@ -86,7 +93,7 @@ export default function WasteStatsScreen({ navigation }) {
         count,
         color: pieColors[index % pieColors.length],
         legendFontColor: '#333',
-        legendFontSize: 14,
+        legendFontSize: 12,
       }));
 
       setPieData(formattedData);
@@ -146,15 +153,18 @@ export default function WasteStatsScreen({ navigation }) {
         />
       )}
 
-      <Text style={[styles.subtitle, { marginTop: 20 }]}>📊 Discard Reasons Breakdown</Text>
+      <Text style={[styles.subtitle, { marginTop: 20, marginBottom: 10 }]}>
+        📊 Discard Reasons Breakdown
+      </Text>
+
       {pieData.length > 0 && (
         <PieChart
           data={pieData}
-          width={screenWidth - 32}
+          width={screenWidth - 30}
           height={220}
           accessor="count"
           backgroundColor="transparent"
-          paddingLeft="15"
+          paddingLeft="10"
           chartConfig={{
             color: (opacity = 1) => `rgba(0, 168, 107, ${opacity})`,
             labelColor: () => '#000',
@@ -162,10 +172,6 @@ export default function WasteStatsScreen({ navigation }) {
           absolute
         />
       )}
-
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-        <Text style={styles.backButtonText}>⬅ Back to Dashboard</Text>
-      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -186,15 +192,14 @@ const styles = StyleSheet.create({
   subtitle: {
     textAlign: 'center',
     color: '#666',
-    marginTop: 6,
-    marginBottom: 10,
+    fontSize: 16,
   },
   filterContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 8,
-    marginBottom: 16,
+    marginVertical: 16,
   },
   filterButton: {
     paddingVertical: 6,
@@ -225,17 +230,5 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: '#666',
-  },
-  backButton: {
-    marginTop: 30,
-    padding: 14,
-    borderRadius: 8,
-    backgroundColor: '#00C897',
-    alignItems: 'center',
-  },
-  backButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
   },
 });

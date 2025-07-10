@@ -288,13 +288,21 @@ const Dashboard = ({ navigation }) => {
             <Text style={styles.cardSubtitle}>Track your food waste</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity 
+            style={styles.card} 
+            onPress={() => navigation.navigate('NearbyUsers')}
+          >
+            <Text style={styles.cardTitle}>👥 See Nearby Users</Text>
+            <Text style={styles.cardSubtitle}>Connect with users in your area</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
-  style={styles.expiringCard}
-  onPress={() => navigation.navigate('ExpiringItems')}
->
-  <Text style={styles.cardTitle}>⚠️ View Expiring Items</Text>
-  <Text style={styles.cardSubtitle}>Check items that are about to expire</Text>
-</TouchableOpacity>
+            style={styles.expiringCard}
+            onPress={() => navigation.navigate('ExpiringItems')}
+          >
+            <Text style={styles.cardTitle}>⚠️ View Expiring Items</Text>
+            <Text style={styles.cardSubtitle}>Check items that are about to expire</Text>
+          </TouchableOpacity>
 
         </View>
       </ScrollView>
@@ -510,7 +518,7 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 12,
     marginBottom: 15,
-    shadowColor: COLORS.cardShadow,
+    shadowColor: '#e1e5e9',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,

@@ -9,10 +9,12 @@ import {
   ActivityIndicator,
   Switch,
   TouchableOpacity,
+  Image,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 
 export default function ProfileScreen() {
@@ -29,12 +31,14 @@ export default function ProfileScreen() {
     phone_number: '',
     date_of_birth: '',
     identity_url: '',
+    profile_photo_url: '',
     is_sharing: true,
     expiry_alerts_enabled: true,
     recipe_suggestions_enabled: true,
   });
 
   const [identityDoc, setIdentityDoc] = useState(null);
+  const [profilePhoto, setProfilePhoto] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
@@ -168,6 +172,101 @@ export default function ProfileScreen() {
     // If it's too long, don't update the state (prevent typing)
   };
 
+  // Profile photo selection function
+  const selectProfilePhoto = async () => {
+    try {
+      // Request permission to access camera and media library
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'We need access to your photo library to select a profile picture.'
+        );
+        return;
+      }
+
+      // Show options to user
+      Alert.alert(
+        'Select Profile Photo',
+        'Choose how you want to select your profile photo',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Take Photo', onPress: () => takePhoto() },
+          { text: 'Choose from Library', onPress: () => pickFromLibrary() },
+        ]
+      );
+    } catch (error) {
+      console.error('Photo selection error:', error);
+      Alert.alert('Error', 'Failed to select photo');
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Required',
+          'We need access to your camera to take a profile picture.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        setProfilePhoto(result.assets[0]);
+      }
+    } catch (error) {
+      console.error('Camera error:', error);
+      Alert.alert('Error', 'Failed to take photo');
+    }
+  };
+
+  const pickFromLibrary = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        setProfilePhoto(result.assets[0]);
+      }
+    } catch (error) {
+      console.error('Library picker error:', error);
+      Alert.alert('Error', 'Failed to select photo from library');
+    }
+  };
+
+  // Remove profile photo
+  const removeProfilePhoto = () => {
+    Alert.alert(
+      'Remove Photo',
+      'Are you sure you want to remove your profile photo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => {
+          setProfilePhoto(null);
+          setProfile({ ...profile, profile_photo_url: '' });
+        }},
+      ]
+    );
+  };
+
+  // Generate default avatar with initials
+  const getDefaultAvatar = () => {
+    const initials = `${profile.name?.charAt(0) || ''}${profile.surname?.charAt(0) || ''}`.toUpperCase();
+    return initials || '👤';
+  };
+
   useEffect(() => {
     loadProfile();
     fetchWasteStats();
@@ -207,6 +306,7 @@ export default function ProfileScreen() {
           longitude: data.longitude?.toString() || '',
           date_of_birth: data.date_of_birth || '',
           identity_url: data.identity_url || '',
+          profile_photo_url: data.profile_photo_url || '',
           expiry_alerts_enabled: data.expiry_alerts_enabled ?? true,
           recipe_suggestions_enabled: data.recipe_suggestions_enabled ?? true,
         });
@@ -360,6 +460,34 @@ export default function ProfileScreen() {
       }
 
       let identity_url = profile.identity_url;
+      let profile_photo_url = profile.profile_photo_url;
+
+      // Upload profile photo if selected
+      if (profilePhoto) {
+  const fileName = `profile_${user.id}_${Date.now()}.jpg`;
+
+  // Convert local URI to Blob
+  const response = await fetch(profilePhoto.uri);
+  const blob = await response.blob();
+
+  const { error: uploadError } = await supabase.storage
+    .from('profile_photos')
+    .upload(fileName, blob, {
+      contentType: 'image/jpeg',
+    });
+
+  if (uploadError) {
+    console.error('Photo upload error:', uploadError);
+    Alert.alert('Upload Error', 'Failed to upload profile photo');
+    return;
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from('profile_photos')
+    .getPublicUrl(fileName);
+
+  profile_photo_url = publicUrlData.publicUrl;
+}
 
       // Upload identity document if selected
       if (identityDoc) {
@@ -392,6 +520,7 @@ export default function ProfileScreen() {
         latitude: profile.latitude ? parseFloat(profile.latitude) : null,
         longitude: profile.longitude ? parseFloat(profile.longitude) : null,
         identity_url,
+        profile_photo_url,
         updated_at: new Date().toISOString(),
         allergies: allergies.split(',').map(a => a.trim().toLowerCase()).filter(a => a.length > 0),
       };
@@ -564,6 +693,50 @@ export default function ProfileScreen() {
       <Text style={styles.stats}>
         ♻️ You've saved {wasteSavedCount} item(s) from waste!
       </Text>
+
+      {/* Profile Photo Section */}
+      <View style={styles.photoSection}>
+        <Text style={styles.sectionTitle}>📸 Profile Photo</Text>
+        
+        <TouchableOpacity
+          style={styles.photoContainer}
+          onPress={selectProfilePhoto}
+        >
+          {profilePhoto || profile.profile_photo_url ? (
+            <Image
+              source={{ uri: profilePhoto?.uri || profile.profile_photo_url }}
+              style={styles.profilePhoto}
+            />
+          ) : (
+            <View style={styles.defaultAvatar}>
+              <Text style={styles.avatarText}>{getDefaultAvatar()}</Text>
+            </View>
+          )}
+          <View style={styles.photoOverlay}>
+            <Text style={styles.photoOverlayText}>📷</Text>
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.photoButtons}>
+          <TouchableOpacity
+            style={[styles.button, styles.photoButton]}
+            onPress={selectProfilePhoto}
+          >
+            <Text style={styles.buttonText}>
+              {profilePhoto || profile.profile_photo_url ? 'Change Photo' : 'Add Photo'}
+            </Text>
+          </TouchableOpacity>
+          
+          {(profilePhoto || profile.profile_photo_url) && (
+            <TouchableOpacity
+              style={[styles.button, styles.removePhotoButton]}
+              onPress={removeProfilePhoto}
+            >
+              <Text style={styles.buttonText}>Remove</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
 
       <Text style={styles.sectionTitle}>📝 Personal Information</Text>
 
@@ -928,4 +1101,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
+    avatarContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  avatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#e0e0e0',
+    borderWidth: 2,
+    borderColor: '#ccc',
+  },
+
 });

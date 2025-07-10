@@ -19,6 +19,7 @@ import ChatScreen from './screens/ChatScreen';
 import DiscardedItemsScreen from './screens/DiscardedItemsScreen';
 import WasteStatsScreen from './screens/WasteStatsScreen';
 import ExpiringItemsScreen from './screens/ExpiringItemsScreen';
+import NearbyUsersScreen from './screens/NearbyUsersScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -178,6 +179,12 @@ export default function App() {
         name="ExpiringItems" 
         component={ExpiringItemsScreen} 
         />
+
+        <Stack.Screen
+  name="NearbyUsers"
+  component={NearbyUsersScreen}
+  options={{ title: 'Nearby Users' }}
+/>
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -8,16 +8,16 @@ import {
   TouchableOpacity,
   Platform,
   Dimensions,
-  StatusBar,
   Modal,
   ScrollView,
   Switch,
   Image,
+  PermissionsAndroid,
+  Linking,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { supabase } from '../lib/supabase';
-
 
 const { width } = Dimensions.get('window');
 
@@ -93,6 +93,61 @@ export default function AddItemScreen({ route, navigation }) {
     }
   }, [route.params?.item]);
 
+  // Request permissions for camera and storage
+  const requestPermissions = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const permissions = [
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+        ];
+        
+        // For Android 13+, use READ_MEDIA_IMAGES instead of READ_EXTERNAL_STORAGE
+        if (Platform.Version >= 33) {
+          permissions.push(PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES);
+        } else {
+          permissions.push(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+          permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
+        }
+        
+        const granted = await PermissionsAndroid.requestMultiple(permissions);
+        
+        console.log('Permissions granted:', granted);
+        
+        const cameraGranted = granted[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
+        
+        let storageGranted = false;
+        if (Platform.Version >= 33) {
+          storageGranted = granted[PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES] === PermissionsAndroid.RESULTS.GRANTED;
+        } else {
+          storageGranted = granted[PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE] === PermissionsAndroid.RESULTS.GRANTED;
+        }
+        
+        if (!cameraGranted || !storageGranted) {
+          Alert.alert(
+            'Permissions Required',
+            'Camera and storage permissions are required to take and select photos.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Settings', onPress: () => Linking.openSettings() }
+            ]
+          );
+        }
+        
+        return { cameraGranted, storageGranted };
+      } catch (err) {
+        console.warn('Permission request error:', err);
+        Alert.alert('Error', 'Unable to request permissions');
+        return { cameraGranted: false, storageGranted: false };
+      }
+    }
+    
+    return { cameraGranted: true, storageGranted: true };
+  };
+
+  useEffect(() => {
+    requestPermissions();
+  }, []);
+
   // Calculate effective expiration date when item is opened
   useEffect(() => {
     if (isOpened && openingDate) {
@@ -151,8 +206,6 @@ export default function AddItemScreen({ route, navigation }) {
   };
 
   const handleDateChange = (event, selectedDate) => {
-    console.log('Date picker event:', event.type, selectedDate);
-    
     if (Platform.OS === 'android') {
       setShowDatePicker(false);
     }
@@ -163,7 +216,6 @@ export default function AddItemScreen({ route, navigation }) {
     }
     
     if (selectedDate) {
-      console.log('Setting new date:', selectedDate);
       setExpirationDate(selectedDate);
       if (Platform.OS === 'ios') {
         setShowDatePicker(false);
@@ -199,17 +251,21 @@ export default function AddItemScreen({ route, navigation }) {
       includeBase64: false,
       maxHeight: 2000,
       maxWidth: 2000,
+      quality: 0.8,
+      saveToPhotos: true,
+      presentationStyle: 'fullScreen',
     };
 
     launchCamera(options, (response) => {
-      setShowImageOptions(false);
-      if (response.didCancel || response.error) {
-        return;
-      }
-      
-      if (response.assets && response.assets[0]) {
+      if (response.didCancel) {
+        console.log('User cancelled camera');
+      } else if (response.errorMessage) {
+        console.log('Camera error:', response.errorMessage);
+        Alert.alert('Camera Error', response.errorMessage);
+      } else if (response.assets && response.assets[0]) {
         setItemImage(response.assets[0].uri);
       }
+      setShowImageOptions(false);
     });
   };
 
@@ -219,17 +275,21 @@ export default function AddItemScreen({ route, navigation }) {
       includeBase64: false,
       maxHeight: 2000,
       maxWidth: 2000,
+      quality: 0.8,
+      selectionLimit: 1,
+      presentationStyle: 'fullScreen',
     };
 
     launchImageLibrary(options, (response) => {
-      setShowImageOptions(false);
-      if (response.didCancel || response.error) {
-        return;
-      }
-      
-      if (response.assets && response.assets[0]) {
+      if (response.didCancel) {
+        console.log('User cancelled image selection');
+      } else if (response.errorMessage) {
+        console.log('Image library error:', response.errorMessage);
+        Alert.alert('Image Library Error', response.errorMessage);
+      } else if (response.assets && response.assets[0]) {
         setItemImage(response.assets[0].uri);
       }
+      setShowImageOptions(false);
     });
   };
 
@@ -281,10 +341,7 @@ export default function AddItemScreen({ route, navigation }) {
         Alert.alert('Save Failed', response.error.message);
       } else {
         console.log('Item saved successfully');
-        
-        // Reset all form fields
         resetForm();
-        
         Alert.alert('Success', `Item ${editingItem ? 'updated' : 'added'} successfully!`, [
           { 
             text: 'OK', 
@@ -304,11 +361,9 @@ export default function AddItemScreen({ route, navigation }) {
     setItemName('');
     setQuantity('1');
     setQuantityUnit('pieces');
-    setExpirationDate(() => {
-      const defaultDate = new Date();
-      defaultDate.setDate(defaultDate.getDate() + 7);
-      return defaultDate;
-    });
+    const defaultDate = new Date();
+    defaultDate.setDate(defaultDate.getDate() + 7);
+    setExpirationDate(defaultDate);
     setIsOpened(false);
     setOpeningDate(new Date());
     setStorageCondition('refrigerated');
@@ -487,10 +542,7 @@ export default function AddItemScreen({ route, navigation }) {
       <Text style={styles.label}>Expiration Date *</Text>
       <TouchableOpacity 
         style={styles.dateButton}
-        onPress={() => {
-          console.log('Date picker button pressed');
-          setShowDatePicker(true);
-        }}
+        onPress={() => setShowDatePicker(true)}
       >
         <Text style={styles.dateButtonText}>
           {formatDate(expirationDate)}
@@ -610,7 +662,6 @@ export default function AddItemScreen({ route, navigation }) {
         )}
       </TouchableOpacity>
 
-      {/* Quick date selection buttons */}
       <View style={styles.quickDateContainer}>
         <Text style={styles.quickDateLabel}>Quick select expiration:</Text>
         <View style={styles.quickDateButtons}>
