@@ -213,11 +213,12 @@ export default function ProfileScreen() {
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      });
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ FIXED
+    });
+
 
       if (!result.canceled && result.assets && result.assets[0]) {
         setProfilePhoto(result.assets[0]);
@@ -230,12 +231,13 @@ export default function ProfileScreen() {
 
   const pickFromLibrary = async () => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      });
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ FIXED
+    });
+
 
       if (!result.canceled && result.assets && result.assets[0]) {
         setProfilePhoto(result.assets[0]);
@@ -464,30 +466,30 @@ export default function ProfileScreen() {
 
       // Upload profile photo if selected
       if (profilePhoto) {
-  const fileName = `profile_${user.id}_${Date.now()}.jpg`;
+        const fileName = `profile_${user.id}_${Date.now()}.jpg`;
 
-  // Convert local URI to Blob
-  const response = await fetch(profilePhoto.uri);
-  const blob = await response.blob();
+        // Convert local URI to Blob
+        const response = await fetch(profilePhoto.uri);
+        const blob = await response.blob();
 
-  const { error: uploadError } = await supabase.storage
-    .from('profile_photos')
-    .upload(fileName, blob, {
-      contentType: 'image/jpeg',
-    });
+        const { error: uploadError } = await supabase.storage
+          .from('profile_photos')
+          .upload(fileName, blob, {
+            contentType: 'image/jpeg',
+          });
 
-  if (uploadError) {
-    console.error('Photo upload error:', uploadError);
-    Alert.alert('Upload Error', 'Failed to upload profile photo');
-    return;
-  }
+        if (uploadError) {
+          console.error('Photo upload error:', uploadError);
+          Alert.alert('Upload Error', 'Failed to upload profile photo');
+          return;
+        }
 
-  const { data: publicUrlData } = supabase.storage
-    .from('profile_photos')
-    .getPublicUrl(fileName);
+        const { data: publicUrlData } = supabase.storage
+          .from('profile_photos')
+          .getPublicUrl(fileName);
 
-  profile_photo_url = publicUrlData.publicUrl;
-}
+        profile_photo_url = publicUrlData.publicUrl;
+      }
 
       // Upload identity document if selected
       if (identityDoc) {
@@ -868,88 +870,88 @@ export default function ProfileScreen() {
         </Text>
       </TouchableOpacity>
 
-      <Text style={styles.sectionTitle}>🍽️ Dietary Information</Text>
+<Text style={styles.sectionTitle}>🍽️ Dietary Information</Text>
 
-      <Text style={styles.label}>Allergies (comma separated)</Text>
-      <TextInput
-        style={styles.input}
-        value={allergies}
-        onChangeText={setAllergies}
-        placeholder="e.g. peanuts, shellfish, dairy"
-        multiline={true}
-        numberOfLines={2}
-      />
+<Text style={styles.label}>Allergies (comma separated)</Text>
+<TextInput
+  style={styles.input}
+  value={allergies}
+  onChangeText={setAllergies}
+  placeholder="e.g. peanuts, shellfish, dairy"
+  multiline={true}
+  numberOfLines={2}
+/>
 
-      <Text style={styles.sectionTitle}>⚙️ Settings</Text>
+<Text style={styles.sectionTitle}>⚙️ Settings</Text>
 
-      <View style={styles.switchContainer}>
-        <Text style={styles.switchLabel}>Sharing Enabled:</Text>
-        <Switch
-          value={profile.is_sharing}
-          onValueChange={(val) => setProfile({ ...profile, is_sharing: val })}
-          trackColor={{ false: '#767577', true: '#00A86B' }}
-          thumbColor={profile.is_sharing ? '#fff' : '#f4f3f4'}
-        />
-      </View>
+<View style={styles.switchContainer}>
+  <Text style={styles.switchLabel}>Sharing Enabled:</Text>
+  <Switch
+    value={profile.is_sharing}
+    onValueChange={(val) => setProfile({ ...profile, is_sharing: val })}
+    trackColor={{ false: '#767577', true: '#00A86B' }}
+    thumbColor={profile.is_sharing ? '#fff' : '#f4f3f4'}
+  />
+</View>
 
-      <Text style={styles.sectionTitle}>🔔 Notification Preferences</Text>
+<Text style={styles.sectionTitle}>🔔 Notification Preferences</Text>
 
-      <View style={styles.switchContainer}>
-        <Text style={styles.switchLabel}>Expiry Alerts:</Text>
-        <Switch
-          value={profile.expiry_alerts_enabled}
-          onValueChange={(val) => setProfile({ ...profile, expiry_alerts_enabled: val })}
-          trackColor={{ false: '#767577', true: '#00A86B' }}
-          thumbColor={profile.expiry_alerts_enabled ? '#fff' : '#f4f3f4'}
-        />
-      </View>
+<View style={styles.switchContainer}>
+  <Text style={styles.switchLabel}>Expiry Alerts:</Text>
+  <Switch
+    value={profile.expiry_alerts_enabled}
+    onValueChange={(val) => setProfile({ ...profile, expiry_alerts_enabled: val })}
+    trackColor={{ false: '#767577', true: '#00A86B' }}
+    thumbColor={profile.expiry_alerts_enabled ? '#fff' : '#f4f3f4'}
+  />
+</View>
 
-      <View style={styles.switchContainer}>
-        <Text style={styles.switchLabel}>Recipe Suggestions:</Text>
-        <Switch
-          value={profile.recipe_suggestions_enabled}
-          onValueChange={(val) => setProfile({ ...profile, recipe_suggestions_enabled: val })}
-          trackColor={{ false: '#767577', true: '#00A86B' }}
-          thumbColor={profile.recipe_suggestions_enabled ? '#fff' : '#f4f3f4'}
-        />
-      </View>
+<View style={styles.switchContainer}>
+  <Text style={styles.switchLabel}>Recipe Suggestions:</Text>
+  <Switch
+    value={profile.recipe_suggestions_enabled}
+    onValueChange={(val) => setProfile({ ...profile, recipe_suggestions_enabled: val })}
+    trackColor={{ false: '#767577', true: '#00A86B' }}
+    thumbColor={profile.recipe_suggestions_enabled ? '#fff' : '#f4f3f4'}
+  />
+</View>
 
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity
-          style={[styles.button, styles.saveButton]}
-          onPress={saveProfile}
-          disabled={saving}
-        >
-          <Text style={styles.buttonText}>
-            {saving ? '💾 Saving...' : '💾 Save Profile'}
-          </Text>
-        </TouchableOpacity>
+<View style={styles.buttonContainer}>
+  <TouchableOpacity
+    style={[styles.button, styles.saveButton]}
+    onPress={saveProfile}
+    disabled={saving}
+  >
+    <Text style={styles.buttonText}>
+      {saving ? '💾 Saving...' : '💾 Save Profile'}
+    </Text>
+  </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.button, styles.resetButton]}
-          onPress={resetPassword}
-        >
-          <Text style={styles.buttonText}>🔒 Reset Password</Text>
-        </TouchableOpacity>
+  <TouchableOpacity
+    style={[styles.button, styles.resetButton]}
+    onPress={resetPassword}
+  >
+    <Text style={styles.buttonText}>🔒 Reset Password</Text>
+  </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.button, styles.chatButton]}
-          onPress={() => navigation.navigate('Chat', { 
-            chatType: 'general', 
-            title: 'Community Chat' 
-          })}
-        >
-          <Text style={styles.buttonText}>💬 Community Chat</Text>
-        </TouchableOpacity>
+  <TouchableOpacity
+    style={[styles.button, styles.chatButton]}
+    onPress={() => navigation.navigate('Chat', { 
+      chatType: 'general', 
+      title: 'Community Chat' 
+    })}
+  >
+    <Text style={styles.buttonText}>💬 Community Chat</Text>
+  </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.button, styles.logoutButton]}
-          onPress={handleLogout}
-        >
-          <Text style={styles.buttonText}>🚪 Logout</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+  <TouchableOpacity
+    style={[styles.button, styles.logoutButton]}
+    onPress={handleLogout}
+  >
+    <Text style={styles.buttonText}>🚪 Logout</Text>
+  </TouchableOpacity>
+</View>
+</ScrollView>
   );
 }
 

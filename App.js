@@ -20,6 +20,7 @@ import DiscardedItemsScreen from './screens/DiscardedItemsScreen';
 import WasteStatsScreen from './screens/WasteStatsScreen';
 import ExpiringItemsScreen from './screens/ExpiringItemsScreen';
 import NearbyUsersScreen from './screens/NearbyUsersScreen';
+import CameraScreen from './screens/CameraScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -185,6 +186,17 @@ export default function App() {
   component={NearbyUsersScreen}
   options={{ title: 'Nearby Users' }}
 />
+        <Stack.Screen name="Pantry" component={PantryScreen} />
+
+
+    <Stack.Screen 
+          name="Camera" 
+          component={CameraScreen}
+          options={{
+            headerShown: false, // Hide header for camera screen
+            presentation: 'modal', // Optional: makes it appear as a modal
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -148,6 +148,19 @@ export default function AddItemScreen({ route, navigation }) {
     requestPermissions();
   }, []);
 
+  // Fixed image handling with focus listener
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (route.params?.imageUri) {
+        setItemImage(route.params.imageUri);
+        // Clear the parameter after using it
+        navigation.setParams({ imageUri: null });
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
   // Calculate effective expiration date when item is opened
   useEffect(() => {
     if (isOpened && openingDate) {
@@ -456,50 +469,62 @@ export default function AddItemScreen({ route, navigation }) {
     </Modal>
   );
 
-  const ImageOptionsModal = () => (
-    <Modal
-      visible={showImageOptions}
-      transparent={true}
-      animationType="slide"
-      onRequestClose={() => setShowImageOptions(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add Photo</Text>
-            <TouchableOpacity onPress={() => setShowImageOptions(false)}>
-              <Text style={styles.modalCloseButton}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.imageOptions}>
+// Updated section from AddItemScreen.js
+// Replace the ImageOptionsModal component with this updated version
+
+const ImageOptionsModal = () => (
+  <Modal
+    visible={showImageOptions}
+    transparent={true}
+    animationType="slide"
+    onRequestClose={() => setShowImageOptions(false)}
+  >
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalContent}>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Add Photo</Text>
+          <TouchableOpacity onPress={() => setShowImageOptions(false)}>
+            <Text style={styles.modalCloseButton}>✕</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.imageOptions}>
+          <TouchableOpacity
+            style={styles.imageOption}
+            onPress={() => {
+              setShowImageOptions(false);
+              // Use the correct screen name - check your navigator configuration
+              navigation.navigate('Camera', {
+                returnScreen: 'AddItem', // or whatever your screen is named in the navigator
+                timestamp: Date.now(), // Forces fresh navigation
+              });
+            }}
+          >
+            <Text style={styles.imageOptionIcon}>📷</Text>
+            <Text style={styles.imageOptionText}>Take Photo</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.imageOption}
+            onPress={selectImageFromLibrary}
+          >
+            <Text style={styles.imageOptionIcon}>🖼️</Text>
+            <Text style={styles.imageOptionText}>Choose from Library</Text>
+          </TouchableOpacity>
+          
+          {itemImage && (
             <TouchableOpacity
               style={styles.imageOption}
-              onPress={selectImageFromCamera}
+              onPress={removeImage}
             >
-              <Text style={styles.imageOptionIcon}>📷</Text>
-              <Text style={styles.imageOptionText}>Take Photo</Text>
+              <Text style={styles.imageOptionIcon}>🗑️</Text>
+              <Text style={styles.imageOptionText}>Remove Photo</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.imageOption}
-              onPress={selectImageFromLibrary}
-            >
-              <Text style={styles.imageOptionIcon}>🖼️</Text>
-              <Text style={styles.imageOptionText}>Choose from Library</Text>
-            </TouchableOpacity>
-            {itemImage && (
-              <TouchableOpacity
-                style={styles.imageOption}
-                onPress={removeImage}
-              >
-                <Text style={styles.imageOptionIcon}>🗑️</Text>
-                <Text style={styles.imageOptionText}>Remove Photo</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          )}
         </View>
       </View>
-    </Modal>
-  );
+    </View>
+  </Modal>
+);
 
   return (
     <ScrollView style={styles.container}>
