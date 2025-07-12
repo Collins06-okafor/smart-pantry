@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   },
   countText: {
     fontSize: 48,
-    color: '#4B0082',
+    color: '#00C897',
     fontWeight: 'bold',
     marginVertical: 20,
   },
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     color: '#444',
   },
   ctaButton: {
-    backgroundColor: '#4B0082',
+    backgroundColor: '#00C897',
     paddingVertical: 15,
     paddingHorizontal: 30,
     borderRadius: 50,
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     textAlign: 'right',
     fontSize: 16,
-    color: '#4B0082',
+    color: '#00C897',
     fontWeight: '600',
   },
 });

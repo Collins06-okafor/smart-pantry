@@ -15,17 +15,23 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
-  TouchableWithoutFeedback
+  TouchableWithoutFeedback,
+  Dimensions,
+  ScrollView
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DiscardItemModal from './DiscardItemModal';
 import { supabase } from '../lib/supabase';
 
+const { width } = Dimensions.get('window');
+
 export default function PantryScreen({ navigation }) {
   const [pantryItems, setPantryItems] = useState([]);
+  const [filteredItems, setFilteredItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Edit Modal State
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -55,6 +61,18 @@ export default function PantryScreen({ navigation }) {
     }, [])
   );
 
+  // Filter items based on search query
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredItems(pantryItems);
+    } else {
+      const filtered = pantryItems.filter(item =>
+        item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredItems(filtered);
+    }
+  }, [searchQuery, pantryItems]);
+
   const initializeScreen = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -75,6 +93,7 @@ export default function PantryScreen({ navigation }) {
 
       if (userError || !user) {
         setPantryItems([]);
+        setFilteredItems([]);
         return;
       }
 
@@ -87,15 +106,18 @@ export default function PantryScreen({ navigation }) {
       if (error) {
         console.error('Fetch error:', error.message);
         setPantryItems([]);
+        setFilteredItems([]);
       } else {
         const validItems = Array.isArray(data)
           ? data.filter(item => item && item.item_name)
           : [];
         setPantryItems(validItems);
+        setFilteredItems(validItems);
       }
     } catch (err) {
       console.error('Unexpected error:', err);
       setPantryItems([]);
+      setFilteredItems([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -308,7 +330,6 @@ export default function PantryScreen({ navigation }) {
       const date = new Date(dateString);
       if (isNaN(date)) return dateString;
       return date.toLocaleDateString('en-US', {
-        year: 'numeric',
         month: 'short',
         day: 'numeric',
       });
@@ -317,74 +338,127 @@ export default function PantryScreen({ navigation }) {
     }
   };
 
-  const renderItem = ({ item }) => {
+  const getItemEmoji = (itemName) => {
+    const name = itemName.toLowerCase();
+    if (name.includes('apple')) return '🍎';
+    if (name.includes('banana')) return '🍌';
+    if (name.includes('bread')) return '🍞';
+    if (name.includes('milk')) return '🥛';
+    if (name.includes('egg')) return '🥚';
+    if (name.includes('cheese')) return '🧀';
+    if (name.includes('tomato')) return '🍅';
+    if (name.includes('potato')) return '🥔';
+    if (name.includes('carrot')) return '🥕';
+    if (name.includes('meat') || name.includes('chicken')) return '🍗';
+    if (name.includes('fish')) return '🐟';
+    if (name.includes('rice')) return '🍚';
+    if (name.includes('pasta')) return '🍝';
+    if (name.includes('flour')) return '🧂';
+    return '🥫';
+  };
+
+  const renderGridItem = ({ item, index }) => {
     const expirationStatus = getExpirationStatus(item.expiration_date);
     const isExpired = expirationStatus.status === 'expired';
     const isExpiring = expirationStatus.status === 'expiring';
+    const emoji = getItemEmoji(item.item_name);
 
     return (
-      <View style={[
-        styles.item,
-        isExpired && styles.itemExpired,
-        isExpiring && styles.itemExpiring
-      ]}>
-        <View style={styles.itemContent}>
-          <Text style={styles.name}>{item.item_name}</Text>
-          <Text style={styles.detail}>Quantity: {item.quantity}</Text>
-          <Text style={[
-            styles.detail,
-            isExpired && styles.expiredText,
-            isExpiring && styles.expiringText
-          ]}>
-            Expires: {formatDate(item.expiration_date)}
+      <TouchableOpacity 
+        style={[
+          styles.gridItem,
+          isExpired && styles.gridItemExpired,
+          isExpiring && styles.gridItemExpiring
+        ]}
+        onPress={() => handleEdit(item)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.gridItemContent}>
+          <View style={styles.itemHeader}>
+            <Text style={styles.itemEmoji}>{emoji}</Text>
+            <View style={styles.itemActions}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleShare(item)}
+              >
+                <Text style={styles.actionEmoji}>📤</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.discardButton]}
+                onPress={() => handleDiscard(item)}
+              >
+                <Text style={styles.actionEmoji}>♻️</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionButton, { marginLeft: 4 }]}
+                onPress={() => handleDelete(item)}
+              >
+                <Text style={styles.actionEmoji}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          <Text style={styles.itemName} numberOfLines={2}>
+            {item.item_name}
           </Text>
+          
+          <View style={styles.itemDetails}>
+            <View style={styles.quantityContainer}>
+              <Text style={styles.quantityDot}>●</Text>
+              <Text style={styles.quantityText}>Qty {item.quantity}</Text>
+            </View>
+            <Text style={[
+              styles.expirationText,
+              isExpired && styles.expiredText,
+              isExpiring && styles.expiringText
+            ]}>
+              {formatDate(item.expiration_date)}
+            </Text>
+          </View>
+
           {isExpired && (
-            <Text style={styles.expiredWarning}>❌ Expired {expirationStatus.days} days ago</Text>
+            <View style={styles.statusBadge}>
+              <Text style={styles.statusText}>EXPIRED</Text>
+            </View>
           )}
           {isExpiring && (
-            <Text style={styles.warningText}>⚠️ Expires in {expirationStatus.days} day(s)</Text>
+            <View style={[styles.statusBadge, styles.expiringBadge]}>
+              <Text style={styles.statusText}>EXPIRING</Text>
+            </View>
           )}
         </View>
-        
-        <View style={styles.itemActions}>
-          <TouchableOpacity
-            style={[styles.deleteButton, { backgroundColor: '#888' }]}
-            onPress={() => handleDiscard(item)}
-          >
-            <Text style={styles.deleteButtonText}>♻️</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.shareButton} 
-            onPress={() => handleShare(item)}
-          >
-            <Text style={styles.shareButtonText}>📤</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.editButton} 
-            onPress={() => handleEdit(item)}
-          >
-            <Text style={styles.editButtonText}>✏️</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.deleteButton} 
-            onPress={() => handleDelete(item)}
-          >
-            <Text style={styles.deleteButtonText}>🗑️</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   const renderHeader = () => (
     <View style={styles.header}>
-      <Text style={styles.title}>My Pantry</Text>
-      <Text style={styles.subtitle}>
-        {pantryItems.length} {pantryItems.length === 1 ? 'item' : 'items'}
-      </Text>
+      <View style={styles.searchContainer}>
+        <Text style={styles.searchIcon}>🔍</Text>
+        <TextInput
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search items"
+          placeholderTextColor="#999"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={() => setSearchQuery('')}
+          >
+            <Text style={styles.clearButtonText}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Your Pantry</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('AddItem')}>
+          <Text style={styles.viewAllText}>Add Item</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -397,12 +471,20 @@ export default function PantryScreen({ navigation }) {
         style={styles.addButton}
         onPress={() => navigation.navigate('AddItem')}
       >
-        <Text style={styles.addButtonText}>➕ Add First Item</Text>
+        <Text style={styles.addButtonText}>+ Add First Item</Text>
       </TouchableOpacity>
     </View>
   );
 
-  const renderDiscardAnalytics = () => {
+  const renderNoResults = () => (
+    <View style={styles.noResultsContainer}>
+      <Text style={styles.noResultsIcon}>🔍</Text>
+      <Text style={styles.noResultsTitle}>No items found</Text>
+      <Text style={styles.noResultsText}>Try searching for something else</Text>
+    </View>
+  );
+
+  const renderAnalytics = () => {
     if (discardStats.length === 0) return null;
 
     const reasonCounts = discardStats.reduce((acc, item) => {
@@ -411,28 +493,24 @@ export default function PantryScreen({ navigation }) {
       return acc;
     }, {});
 
-    const topReasons = Object.entries(reasonCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
+    const topReason = Object.entries(reasonCounts)
+      .sort((a, b) => b[1] - a[1])[0];
 
     return (
-      <View style={styles.discardAnalytics}>
-        <Text style={styles.discardTitle}>♻️ Discard Analytics</Text>
-        <View style={styles.discardStats}>
-          <Text style={styles.discardStat}>
-            Total Discarded: <Text style={styles.statValue}>{discardStats.length}</Text>
-          </Text>
-          <Text style={styles.discardStat}>
-            Last Discarded: <Text style={styles.statValue}>{formatDate(discardStats[0]?.timestamp)}</Text>
-          </Text>
+      <View style={styles.analyticsCard}>
+        <Text style={styles.analyticsTitle}>♻️ Waste Insights</Text>
+        <View style={styles.analyticsContent}>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>{discardStats.length}</Text>
+            <Text style={styles.statLabel}>Items Discarded</Text>
+          </View>
+          {topReason && (
+            <View style={styles.statItem}>
+              <Text style={styles.statReason}>{topReason[0]}</Text>
+              <Text style={styles.statLabel}>Top Reason</Text>
+            </View>
+          )}
         </View>
-
-        <Text style={styles.reasonsTitle}>Top Discard Reasons:</Text>
-        {topReasons.map(([reason, count], index) => (
-          <Text key={index} style={styles.reasonItem}>
-            • {reason} ({count} time{count > 1 ? 's' : ''})
-          </Text>
-        ))}
       </View>
     );
   };
@@ -440,9 +518,9 @@ export default function PantryScreen({ navigation }) {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+        <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#00C897" />
+          <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Loading your pantry...</Text>
         </View>
       </SafeAreaView>
@@ -451,40 +529,43 @@ export default function PantryScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
+      <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
       
       {pantryItems.length === 0 ? (
         renderEmptyState()
       ) : (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.keyboardAvoidingContainer}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.contentContainer}>
-              <FlatList
-                data={pantryItems}
-                keyExtractor={(item) => String(item.id)}
-                renderItem={renderItem}
-                ListHeaderComponent={renderHeader}
-                contentContainerStyle={styles.listContainer}
-                refreshControl={
-                  <RefreshControl
-                    refreshing={refreshing}
-                    onRefresh={onRefresh}
-                    colors={['#00C897']}
-                    tintColor="#00C897"
-                  />
-                }
-                showsVerticalScrollIndicator={false}
+        <View style={styles.contentContainer}>
+          <FlatList
+            data={filteredItems}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderGridItem}
+            ListHeaderComponent={renderHeader}
+            ListFooterComponent={renderAnalytics}
+            ListEmptyComponent={searchQuery.length > 0 ? renderNoResults : null}
+            numColumns={2}
+            columnWrapperStyle={filteredItems.length > 0 ? styles.row : null}
+            contentContainerStyle={styles.listContainer}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#4CAF50']}
+                tintColor="#4CAF50"
               />
-              
-              {renderDiscardAnalytics()}
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
+            }
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
       )}
+
+      {/* Floating Action Button */}
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => navigation.navigate('AddItem')}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
 
       {/* Discard Modal */}
       <DiscardItemModal
@@ -517,41 +598,52 @@ export default function PantryScreen({ navigation }) {
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Edit Item</Text>
-
-                <Text style={styles.label}>Item Name</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.item_name}
-                  onChangeText={(text) => setEditForm(prev => ({ ...prev, item_name: text }))}
-                  placeholder="Enter item name"
-                />
-
-                <Text style={styles.label}>Quantity</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.quantity}
-                  keyboardType="numeric"
-                  onChangeText={(text) => setEditForm(prev => ({ ...prev, quantity: text }))}
-                  placeholder="Enter quantity"
-                />
-
-                <Text style={styles.label}>Expiration Date</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editForm.expiration_date}
-                  onChangeText={(text) => setEditForm(prev => ({ ...prev, expiration_date: text }))}
-                  placeholder="YYYY-MM-DD"
-                />
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={styles.cancelButton} onPress={cancelEdit}>
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.saveButton} onPress={saveEdit}>
-                    <Text style={styles.saveButtonText}>Save Changes</Text>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Edit Item</Text>
+                  <TouchableOpacity onPress={cancelEdit} style={styles.closeButton}>
+                    <Text style={styles.closeButtonText}>✕</Text>
                   </TouchableOpacity>
                 </View>
+
+                <View style={styles.formContainer}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Item Name</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={editForm.item_name}
+                      onChangeText={(text) => setEditForm(prev => ({ ...prev, item_name: text }))}
+                      placeholder="Enter item name"
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Quantity</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={editForm.quantity}
+                      keyboardType="numeric"
+                      onChangeText={(text) => setEditForm(prev => ({ ...prev, quantity: text }))}
+                      placeholder="Enter quantity"
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Expiration Date</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={editForm.expiration_date}
+                      onChangeText={(text) => setEditForm(prev => ({ ...prev, expiration_date: text }))}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity style={styles.saveButton} onPress={saveEdit}>
+                  <Text style={styles.saveButtonText}>Save Changes</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </TouchableWithoutFeedback>
@@ -565,41 +657,40 @@ export default function PantryScreen({ navigation }) {
         visible={shareModalVisible}
         onRequestClose={cancelShare}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalKeyboardAvoidingView}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Share Item</Text>
-                
-                {selectedItemForShare && (
-                  <View style={styles.shareItemPreview}>
-                    <Text style={styles.shareItemName}>{selectedItemForShare.item_name}</Text>
-                    <Text style={styles.shareItemDetail}>Quantity: {selectedItemForShare.quantity}</Text>
-                    <Text style={styles.shareItemDetail}>
-                      Expires: {formatDate(selectedItemForShare.expiration_date)}
-                    </Text>
-                  </View>
-                )}
-
-                <Text style={styles.shareDescription}>
-                  Share this item with your neighbors. They'll be able to see and request it.
-                </Text>
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={styles.cancelButton} onPress={cancelShare}>
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.shareConfirmButton} onPress={shareItem}>
-                    <Text style={styles.shareConfirmButtonText}>📤 Share Item</Text>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity onPress={cancelShare} style={styles.closeButton}>
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </TouchableOpacity>
               </View>
+              
+              {selectedItemForShare && (
+                <View style={styles.sharePreview}>
+                  <Text style={styles.sharePreviewEmoji}>
+                    {getItemEmoji(selectedItemForShare.item_name)}
+                  </Text>
+                  <Text style={styles.sharePreviewName}>
+                    {selectedItemForShare.item_name}
+                  </Text>
+                  <Text style={styles.sharePreviewDetails}>
+                    Qty: {selectedItemForShare.quantity} • Expires: {formatDate(selectedItemForShare.expiration_date)}
+                  </Text>
+                </View>
+              )}
+
+              <Text style={styles.shareDescription}>
+                Share this item with your neighbors. They'll be able to see and request it.
+              </Text>
+
+              <TouchableOpacity style={styles.shareButton} onPress={shareItem}>
+                <Text style={styles.shareButtonText}>📤 Share with Neighbors</Text>
+              </TouchableOpacity>
             </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
+          </View>
+        </TouchableWithoutFeedback>
       </Modal>
     </SafeAreaView>
   );
@@ -608,10 +699,7 @@ export default function PantryScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  keyboardAvoidingContainer: {
-    flex: 1,
+    backgroundColor: '#f8f9fa',
   },
   contentContainer: {
     flex: 1,
@@ -631,64 +719,142 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   header: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
     paddingBottom: 10,
   },
-  title: {
-    fontSize: 28,
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 25,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  searchIcon: {
+    fontSize: 18,
+    marginRight: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+  },
+  clearButton: {
+    padding: 5,
+  },
+  clearButtonText: {
+    fontSize: 16,
+    color: '#999',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 5,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
+  viewAllText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '600',
   },
   listContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 100,
   },
-  item: {
+  row: {
+    justifyContent: 'space-between',
+    marginBottom: 15,
+  },
+  gridItem: {
     backgroundColor: '#fff',
+    borderRadius: 20,
     padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#00C897',
-    flexDirection: 'row',
-    alignItems: 'center',
+    width: (width - 55) / 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
     elevation: 3,
   },
-  itemExpiring: {
+  gridItemExpiring: {
     backgroundColor: '#fff8e1',
-    borderLeftColor: '#ff9800',
+    borderWidth: 1,
+    borderColor: '#ffb74d',
   },
-  itemExpired: {
+  gridItemExpired: {
     backgroundColor: '#ffebee',
-    borderLeftColor: '#f44336',
+    borderWidth: 1,
+    borderColor: '#ef5350',
   },
-  itemContent: {
+  gridItemContent: {
     flex: 1,
+  },
+  itemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  itemEmoji: {
+    fontSize: 32,
   },
   itemActions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    gap: 4,
   },
-  name: {
-    fontSize: 18,
-    fontWeight: 'bold',
+  actionButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  discardButton: {
+    backgroundColor: '#e8f5e8',
+  },
+  actionEmoji: {
+    fontSize: 12,
+  },
+  itemName: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#333',
+    marginBottom: 8,
+    lineHeight: 20,
+  },
+  itemDetails: {
+    marginBottom: 8,
+  },
+  quantityContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 4,
   },
-  detail: {
-    fontSize: 14,
+  quantityDot: {
+    fontSize: 8,
+    color: '#4CAF50',
+    marginRight: 6,
+  },
+  quantityText: {
+    fontSize: 12,
     color: '#666',
-    marginBottom: 2,
+  },
+  expirationText: {
+    fontSize: 12,
+    color: '#666',
   },
   expiringText: {
     color: '#ff9800',
@@ -698,44 +864,81 @@ const styles = StyleSheet.create({
     color: '#f44336',
     fontWeight: '600',
   },
-  warningText: {
-    fontSize: 12,
-    color: '#ff9800',
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-  expiredWarning: {
-    fontSize: 12,
-    color: '#f44336',
-    fontWeight: 'bold',
-    marginTop: 4,
-  },
-  shareButton: {
-    backgroundColor: '#00C897',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  shareButtonText: {
-    fontSize: 16,
-  },
-  editButton: {
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  editButtonText: {
-    fontSize: 16,
-  },
-  deleteButton: {
+  statusBadge: {
     backgroundColor: '#f44336',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
   },
-  deleteButtonText: {
-    fontSize: 16,
+  expiringBadge: {
+    backgroundColor: '#ff9800',
+  },
+  statusText: {
+    fontSize: 10,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  analyticsCard: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  analyticsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 15,
+  },
+  analyticsContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+  },
+  statReason: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    textAlign: 'center',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#00C897',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  fabText: {
+    fontSize: 24,
+    color: '#fff',
+    fontWeight: 'bold',
   },
   emptyContainer: {
     flex: 1,
@@ -745,7 +948,7 @@ const styles = StyleSheet.create({
   },
   emptyIcon: {
     fontSize: 64,
-    marginBottom: 16,
+    marginBottom: 20,
   },
   emptyTitle: {
     fontSize: 24,
@@ -757,168 +960,116 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
+       textAlign: 'center',
+    marginBottom: 20,
   },
   addButton: {
     backgroundColor: '#00C897',
-    paddingVertical: 14,
-    paddingHorizontal: 28,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
     borderRadius: 25,
-    shadowColor: '#00C897',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
   addButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 20,
   },
   modalContent: {
+    width: '100%',
     backgroundColor: '#fff',
     borderRadius: 20,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
-    maxHeight: '80%',
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
     color: '#333',
   },
+  closeButton: {
+    padding: 5,
+  },
+  closeButtonText: {
+    fontSize: 18,
+    color: '#999',
+  },
+  formContainer: {
+    marginBottom: 20,
+  },
+  inputGroup: {
+    marginBottom: 15,
+  },
   label: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
     color: '#333',
+    marginBottom: 6,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    marginBottom: 16,
-    backgroundColor: '#f9f9f9',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 20,
-  },
-  cancelButton: {
-    backgroundColor: '#f44336',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    flex: 1,
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#333',
   },
   saveButton: {
     backgroundColor: '#00C897',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
   saveButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
+    fontWeight: '600',
   },
-  shareItemPreview: {
-    backgroundColor: '#f0f0f0',
-    padding: 16,
-    borderRadius: 10,
-    marginBottom: 16,
+  sharePreview: {
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  shareItemName: {
+  sharePreviewEmoji: {
+    fontSize: 48,
+    marginBottom: 8,
+  },
+  sharePreviewName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#333',
     marginBottom: 4,
   },
-  shareItemDetail: {
+  sharePreviewDetails: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 2,
   },
   shareDescription: {
     fontSize: 14,
-    color: '#666',
+    color: '#555',
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 10,
+    marginBottom: 20,
   },
-  shareConfirmButton: {
+  shareButton: {
     backgroundColor: '#00C897',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  shareConfirmButtonText: {
+  shareButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  discardStats: {
-    marginBottom: 12,
-  },
-  discardStat: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  statValue: {
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  reasonsTitle: {
-    fontSize: 14,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  reasonItem: {
-    fontSize: 13,
-    color: '#666',
-    marginBottom: 2,
-  },
-  discardAnalytics: {
-    backgroundColor: '#fff',
-    marginHorizontal: 20,
-    marginVertical: 10,
-    padding: 16,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  discardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: '#333',
   },
 });

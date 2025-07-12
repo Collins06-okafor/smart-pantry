@@ -1,9 +1,16 @@
-// MainTabsStack.js - Create this new file
+// screens/MainTabsStack.js
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import {
+  Home,
+  Package,
+  Plus,
+  ChefHat,
+  Settings,
+} from 'lucide-react-native';
 
-// Import your screen components
+// Screens
 import Dashboard from './Dashboard';
 import PantryScreen from './PantryScreen';
 import AddItemScreen from './AddItemScreen';
@@ -12,11 +19,11 @@ import ProfileScreen from './ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
-function MainTabsStack() {
+export default function MainTabsStack() {
   return (
     <Tab.Navigator
       screenOptions={{
-        headerShown: false, // Hide the default header
+        headerShown: false,
         tabBarStyle: styles.tabBar,
         tabBarActiveTintColor: '#00C897',
         tabBarInactiveTintColor: '#666',
@@ -29,57 +36,50 @@ function MainTabsStack() {
         component={Dashboard}
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <Text style={[styles.tabIcon, { color: focused ? '#00C897' : '#666' }]}>
-              🏠
-            </Text>
+            <Home size={22} color={focused ? '#00C897' : '#666'} />
           ),
         }}
       />
-      
+
       <Tab.Screen 
         name="Pantry" 
         component={PantryScreen}
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <Text style={[styles.tabIcon, { color: focused ? '#00C897' : '#666' }]}>
-              📦
-            </Text>
+            <Package size={22} color={focused ? '#00C897' : '#666'} />
           ),
         }}
       />
-      
+
       <Tab.Screen 
         name="Add" 
         component={AddItemScreen}
         options={{
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ focused }) => (
             <View style={[styles.addButton, { backgroundColor: focused ? '#00A876' : '#00C897' }]}>
-              <Text style={styles.addButtonIcon}>+</Text>
+              <Plus size={22} color="#fff" />
             </View>
           ),
+          tabBarLabel: '', // Hide label for center Add button
         }}
       />
-      
+
       <Tab.Screen 
         name="Recipes" 
         component={RecipeScreen}
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <Text style={[styles.tabIcon, { color: focused ? '#00C897' : '#666' }]}>
-              🍽️
-            </Text>
+            <ChefHat size={22} color={focused ? '#00C897' : '#666'} />
           ),
         }}
       />
-      
+
       <Tab.Screen 
         name="Profile" 
         component={ProfileScreen}
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <Text style={[styles.tabIcon, { color: focused ? '#00C897' : '#666' }]}>
-              ⚙️
-            </Text>
+            <Settings size={22} color={focused ? '#00C897' : '#666'} />
           ),
         }}
       />
@@ -109,22 +109,17 @@ const styles = StyleSheet.create({
   tabBarIcon: {
     marginBottom: 4,
   },
-  tabIcon: {
-    fontSize: 20,
-  },
   addButton: {
-    width: 35,
-    height: 35,
-    borderRadius: 17.5,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 4,
-  },
-  addButtonIcon: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 4,
   },
 });
-
-export default MainTabsStack;

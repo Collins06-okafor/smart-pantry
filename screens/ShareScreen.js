@@ -166,62 +166,72 @@ const useShareData = (currentUser) => {
   }, []);
 
   const fetchMySharedItems = useCallback(async (userId) => {
-    try {
-      const { data, error } = await supabase
-        .from('shared_items')
-        .select(`
-          id, 
-          offered_at, 
-          status,
-          item_id,
-          pantry_items!inner(
-            id,
-            item_name, 
-            expiration_date, 
-            quantity
-          )
-        `)
-        .eq('user_id', userId)
-        .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED])
-        .order('offered_at', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('shared_items')
+      .select(`
+        id, 
+        offered_at, 
+        status,
+        item_link,
+        pantry_items!shared_items_item_link_fkey(
+          id,
+          item_name, 
+          expiration_date, 
+          quantity
+        )
+      `)
+      .eq('user_id', userId)
+      .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED])
+      .order('offered_at', { ascending: false });
 
-      if (error) throw error;
-      setMySharedItems(data || []);
-    } catch (err) {
-      console.error('Error fetching my shared items:', err);
-      setMySharedItems([]);
-    }
-  }, []);
+    if (error) throw error;
+    
+    // Filter out items where the pantry_items join failed (item might have been deleted)
+    const validItems = (data || []).filter(item => item.pantry_items);
+    
+    setMySharedItems(validItems);
+  } catch (err) {
+    console.error('Error fetching my shared items:', err);
+    setMySharedItems([]);
+  }
+}, []);
 
   const fetchMyPantryItems = useCallback(async (userId) => {
-    try {
-      const { data: sharedItemIds, error: sharedError } = await supabase
-        .from('shared_items')
-        .select('item_link')
-        .eq('user_id', userId)
-        .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
+  try {
+    const { data: sharedItemIds, error: sharedError } = await supabase
+      .from('shared_items')
+      .select('item_link')
+      .eq('user_id', userId)
+      .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
 
-      if (sharedError) throw sharedError;
+    if (sharedError) throw sharedError;
 
-      const excludeIds = sharedItemIds.map(item => item.item_id);
-      let query = supabase
-        .from('pantry_items')
-        .select('id, item_name, expiration_date, quantity')
-        .eq('user_id', userId)
-        .order('expiration_date', { ascending: true });
+    // Filter out null, undefined, and empty values, and ensure they're valid integers
+    const excludeIds = sharedItemIds
+      .map(item => item.item_link)
+      .filter(id => id != null && id !== '' && !isNaN(parseInt(id)))
+      .map(id => parseInt(id));
 
-      if (excludeIds.length > 0) {
-        query = query.not('id', 'in', `(${excludeIds.join(',')})`);
-      }
+    let query = supabase
+      .from('pantry_items')
+      .select('id, item_name, expiration_date, quantity')
+      .eq('user_id', userId)
+      .order('expiration_date', { ascending: true });
 
-      const { data, error } = await query;
-      if (error) throw error;
-      setMyPantryItems(data || []);
-    } catch (err) {
-      console.error('Error fetching pantry items:', err);
-      setMyPantryItems([]);
+    // Only add the exclusion filter if we have valid IDs to exclude
+    if (excludeIds.length > 0) {
+      query = query.not('id', 'in', `(${excludeIds.join(',')})`);
     }
-  }, []);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    setMyPantryItems(data || []);
+  } catch (err) {
+    console.error('Error fetching pantry items:', err);
+    setMyPantryItems([]);
+  }
+}, []);
 
   const refreshAllData = useCallback(async () => {
     if (!currentUser) return;
@@ -469,7 +479,7 @@ export default function ShareScreen({ navigation }) {
     const { data: existingShare, error: checkError } = await supabase
       .from('shared_items')
       .select('id')
-      .eq('item_id', itemId)
+      .eq('item_link', itemId)  // Changed from item_id to item_link
       .eq('user_id', currentUser.id)
       .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
 
@@ -486,7 +496,7 @@ export default function ShareScreen({ navigation }) {
     const { error } = await supabase
       .from('shared_items')
       .insert({
-        item_id: itemId,
+        item_link: itemId,  // Changed from item_id to item_link
         user_id: currentUser.id,
         status: STATUSES.AVAILABLE,
         offered_at: new Date().toISOString()
@@ -496,7 +506,7 @@ export default function ShareScreen({ navigation }) {
 
     Alert.alert('Success', 'Item shared with your neighbors!');
     shareModal.close();
-    await refreshAllData(); // Refresh all data to update both My Shared and My Pantry lists
+    await refreshAllData();
   } catch (err) {
     console.error('Share error:', err);
     Alert.alert('Error', 'Failed to share item. Please try again.');

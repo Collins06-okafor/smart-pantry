@@ -13,21 +13,29 @@ import {
   ScrollView,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
 
 export default function RecipeScreen() {
+  const navigation = useNavigation();
   const [pantryItems, setPantryItems] = useState([]);
   const [recipes, setRecipes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('pantry'); // 'pantry', 'search', 'random'
+  const [activeTab, setActiveTab] = useState('pantry');
   const [searchLoading, setSearchLoading] = useState(false);
+  const [userAllergies, setUserAllergies] = useState([]);
 
   const API_KEY = '62f8f2c9d58b4ff3952e3c6ae227136c';
 
-  const [userAllergies, setUserAllergies] = useState([]);
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerShown: false,
+    });
+  }, [navigation]);
 
   useEffect(() => {
     fetchPantryItems();
@@ -77,9 +85,17 @@ export default function RecipeScreen() {
       if (error) throw error;
 
       if (data?.allergies) {
-        const allergyList = data.allergies
-          .split(',')
-          .map(a => a.trim().toLowerCase());
+        let allergyList = [];
+        
+        if (Array.isArray(data.allergies)) {
+          allergyList = data.allergies.map(a => a.trim().toLowerCase()).filter(a => a.length > 0);
+        } else if (typeof data.allergies === 'string') {
+          allergyList = data.allergies
+            .split(',')
+            .map(a => a.trim().toLowerCase())
+            .filter(a => a.length > 0);
+        }
+        
         setUserAllergies(allergyList);
       }
     } catch (err) {
@@ -93,25 +109,21 @@ export default function RecipeScreen() {
     const allergySet = new Set(userAllergies);
 
     return recipesList.filter(recipe => {
-      // Check missedIngredients (from ingredient-based search)
       const missedIngredients = recipe?.missedIngredients || [];
       const hasMissedAllergen = missedIngredients.some(ingredient =>
         allergySet.has(ingredient.name?.toLowerCase())
       );
 
-      // Check usedIngredients (from ingredient-based search)
       const usedIngredients = recipe?.usedIngredients || [];
       const hasUsedAllergen = usedIngredients.some(ingredient =>
         allergySet.has(ingredient.name?.toLowerCase())
       );
 
-      // Check extendedIngredients (from complex search/random recipes)
       const extendedIngredients = recipe?.extendedIngredients || [];
       const hasExtendedAllergen = extendedIngredients.some(ingredient =>
         allergySet.has(ingredient.name?.toLowerCase())
       );
 
-      // Return false if any allergen is found
       return !hasMissedAllergen && !hasUsedAllergen && !hasExtendedAllergen;
     });
   };
@@ -209,7 +221,6 @@ export default function RecipeScreen() {
   };
 
   const renderRecipeItem = ({ item }) => {
-    // Handle both ingredient-based and search-based recipe formats
     const recipeData = {
       id: item.id,
       title: item.title,
@@ -220,43 +231,72 @@ export default function RecipeScreen() {
       servings: item.servings,
       summary: item.summary
     };
-     const caloriesInfo = item?.nutrition?.nutrients?.find(n => n.name === 'Calories');
+    const caloriesInfo = item?.nutrition?.nutrients?.find(n => n.name === 'Calories');
+    const rating = item?.spoonacularScore ? (item.spoonacularScore / 20).toFixed(1) : 4.0;
 
     return (
-      <View style={styles.card}>
+      <TouchableOpacity 
+        style={styles.card}
+        onPress={() => navigation.navigate('RecipeDetail', { recipeId: recipeData.id })}
+      >
         <Image source={{ uri: recipeData.image }} style={styles.image} />
-        <Text style={styles.title}>{recipeData.title}</Text>
+        <View style={styles.cardContent}>
+          <Text style={styles.title} numberOfLines={1}>{recipeData.title}</Text>
+          
+          <View style={styles.metaContainer}>
+            <View style={styles.metaItem}>
+              <Ionicons name="time-outline" size={16} color="#666" />
+              <Text style={styles.metaText}>{recipeData.readyInMinutes || 'N/A'} min</Text>
+            </View>
+            
+            <View style={styles.metaItem}>
+              <Ionicons name="restaurant-outline" size={16} color="#666" />
+              <Text style={styles.metaText}>Serves {recipeData.servings || 'N/A'}</Text>
+            </View>
+            
+            {caloriesInfo && (
+              <View style={styles.metaItem}>
+                <Ionicons name="flame-outline" size={16} color="#666" />
+                <Text style={styles.metaText}>{Math.round(caloriesInfo.amount)} {caloriesInfo.unit}</Text>
+              </View>
+            )}
+          </View>
 
-        {recipeData.readyInMinutes && (
-          <Text style={styles.metaText}>⏱️ {recipeData.readyInMinutes} mins</Text>
-        )}
-        {recipeData.servings && (
-          <Text style={styles.metaText}>🍽️ Serves {recipeData.servings}</Text>
-        )}
+          <View style={styles.ratingContainer}>
+            <Ionicons name="star" size={16} color="#FFD700" />
+            <Text style={styles.ratingText}>{rating}</Text>
+          </View>
 
-        {caloriesInfo && (
-  <Text style={styles.metaText}>🔥 {Math.round(caloriesInfo.amount)} {caloriesInfo.unit} Calories</Text>
-)}
+          {recipeData.usedIngredients?.length > 0 && (
+            <View style={styles.ingredientsContainer}>
+              <Text style={styles.ingredientsLabel}>You have:</Text>
+              <Text style={styles.ingredientsText} numberOfLines={2}>
+                {recipeData.usedIngredients.map(ing => ing.name).join(', ')}
+              </Text>
+            </View>
+          )}
 
-        {recipeData.usedIngredients?.length > 0 && (
-          <Text style={styles.ingredients}>
-            Used: {recipeData.usedIngredients.map(ing => ing.name).join(', ')}
-          </Text>
-        )}
-        {recipeData.missedIngredients?.length > 0 && (
-          <Text style={[styles.ingredients, styles.missing]}>
-            Missing: {recipeData.missedIngredients.map(ing => ing.name).join(', ')}
-          </Text>
-        )}
+          {recipeData.missedIngredients?.length > 0 && (
+            <View style={styles.ingredientsContainer}>
+              <Text style={[styles.ingredientsLabel, styles.missingLabel]}>You need:</Text>
+              <Text style={[styles.ingredientsText, styles.missingText]} numberOfLines={2}>
+                {recipeData.missedIngredients.map(ing => ing.name).join(', ')}
+              </Text>
+            </View>
+          )}
 
-        <TouchableOpacity
-          onPress={() =>
-            Linking.openURL(`https://spoonacular.com/recipes/${recipeData.title.replace(/ /g, '-')}-${recipeData.id}`)
-          }
-        >
-          <Text style={styles.link}>View Recipe</Text>
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+  style={styles.viewButton}
+  onPress={() =>
+    navigation.navigate('RecipeDetail', { recipeId: item.id })
+  }
+>
+  <Text style={styles.viewButtonText}>View Recipe</Text>
+  <Ionicons name="arrow-forward" size={16} color="#00C897" />
+</TouchableOpacity>
+
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -266,14 +306,24 @@ export default function RecipeScreen() {
         style={[styles.tab, activeTab === 'pantry' && styles.activeTab]}
         onPress={() => handleTabChange('pantry')}
       >
+        <Ionicons 
+          name="basket-outline" 
+          size={20} 
+          color={activeTab === 'pantry' ? '#fff' : '#666'} 
+        />
         <Text style={[styles.tabText, activeTab === 'pantry' && styles.activeTabText]}>
-          From Pantry
+          Pantry
         </Text>
       </TouchableOpacity>
       <TouchableOpacity
         style={[styles.tab, activeTab === 'search' && styles.activeTab]}
         onPress={() => handleTabChange('search')}
       >
+        <Ionicons 
+          name="search-outline" 
+          size={20} 
+          color={activeTab === 'search' ? '#fff' : '#666'} 
+        />
         <Text style={[styles.tabText, activeTab === 'search' && styles.activeTabText]}>
           Search
         </Text>
@@ -282,6 +332,11 @@ export default function RecipeScreen() {
         style={[styles.tab, activeTab === 'random' && styles.activeTab]}
         onPress={() => handleTabChange('random')}
       >
+        <Ionicons 
+          name="shuffle-outline" 
+          size={20} 
+          color={activeTab === 'random' ? '#fff' : '#666'} 
+        />
         <Text style={[styles.tabText, activeTab === 'random' && styles.activeTabText]}>
           Random
         </Text>
@@ -291,35 +346,31 @@ export default function RecipeScreen() {
 
   const renderSearchBar = () => (
     <View style={styles.searchContainer}>
+      <Ionicons name="search-outline" size={20} color="#888" style={styles.searchIcon} />
       <TextInput
         style={styles.searchInput}
-        placeholder="Search for recipes..."
+        placeholder="Search recipes..."
+        placeholderTextColor="#888"
         value={searchQuery}
         onChangeText={setSearchQuery}
         onSubmitEditing={() => searchRecipes(searchQuery)}
       />
-      <TouchableOpacity
-        style={styles.searchButton}
-        onPress={() => searchRecipes(searchQuery)}
-        disabled={searchLoading}
-      >
-        {searchLoading ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <Text style={styles.searchButtonText}>Search</Text>
-        )}
-      </TouchableOpacity>
+      {searchQuery.length > 0 && (
+        <TouchableOpacity onPress={() => setSearchQuery('')}>
+          <Ionicons name="close-circle" size={20} color="#888" />
+        </TouchableOpacity>
+      )}
     </View>
   );
 
-  // Add allergy indicator if user has allergies
   const renderAllergyIndicator = () => {
     if (userAllergies.length === 0) return null;
     
     return (
       <View style={styles.allergyIndicator}>
+        <Ionicons name="warning-outline" size={16} color="#856404" />
         <Text style={styles.allergyText}>
-          🚫 Filtering out: {userAllergies.join(', ')}
+          Filtering out: {userAllergies.join(', ')}
         </Text>
       </View>
     );
@@ -329,8 +380,8 @@ export default function RecipeScreen() {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color="#00C897" />
-        <Text style={{ color: '#666', marginTop: 10 }}>
-          {activeTab === 'pantry' ? 'Fetching recipes...' : 'Loading...'}
+        <Text style={styles.loadingText}>
+          {activeTab === 'pantry' ? 'Finding recipes from your pantry...' : 'Loading delicious recipes...'}
         </Text>
       </View>
     );
@@ -338,32 +389,43 @@ export default function RecipeScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.screenTitle}>Recipe Discovery</Text>
+      <View style={styles.header}>
+        <Text style={styles.screenTitle}>Recipe Discovery</Text>
+        {activeTab === 'pantry' && pantryItems.length > 0 && (
+          <Text style={styles.basedOnText}>
+            Based on: {pantryItems.slice(0, 3).join(', ')}{pantryItems.length > 3 ? '...' : ''}
+          </Text>
+        )}
+      </View>
       
       {renderTabBar()}
       {renderAllergyIndicator()}
       
-      {activeTab === 'pantry' && pantryItems.length > 0 && (
-        <Text style={styles.basedOnText}>
-          Based on: {pantryItems.join(', ')}
-        </Text>
-      )}
-      
-      {activeTab === 'search' && (
-        <>
-          {renderSearchBar()}
-        </>
-      )}
+      {activeTab === 'search' && renderSearchBar()}
 
       {error ? (
         <View style={styles.centered}>
-          <Text style={{ color: 'red', textAlign: 'center' }}>{error}</Text>
+          <Ionicons name="sad-outline" size={40} color="#ff6b6b" />
+          <Text style={styles.errorText}>{error}</Text>
+          {activeTab === 'pantry' && (
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={fetchPantryItems}
+            >
+              <Text style={styles.retryButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : recipes.length === 0 && !loading ? (
         <View style={styles.centered}>
-          <Text>
+          <Ionicons 
+            name={activeTab === 'search' ? "search-outline" : "fast-food-outline"} 
+            size={40} 
+            color="#ccc" 
+          />
+          <Text style={styles.emptyText}>
             {activeTab === 'search' 
-              ? 'Enter a search term to find recipes' 
+              ? 'Search for delicious recipes' 
               : 'No recipes found'}
           </Text>
         </View>
@@ -372,7 +434,7 @@ export default function RecipeScreen() {
           data={recipes}
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderRecipeItem}
-          contentContainerStyle={{ paddingBottom: 30 }}
+          contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -387,31 +449,35 @@ const styles = StyleSheet.create({
     paddingTop: 40,
     paddingHorizontal: 16,
   },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+  header: {
+    marginBottom: 16,
+    paddingHorizontal: 8,
   },
   screenTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
+    color: '#333',
+    marginBottom: 4,
+  },
+  basedOnText: {
+    fontSize: 14,
+    color: '#888',
+    fontStyle: 'italic',
   },
   tabContainer: {
     flexDirection: 'row',
     marginBottom: 16,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 25,
-    padding: 4,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    padding: 6,
   },
   tab: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
   },
   activeTab: {
     backgroundColor: '#00C897',
@@ -420,99 +486,162 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#666',
+    marginLeft: 6,
   },
   activeTabText: {
     color: '#fff',
   },
   allergyIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff3cd',
-    padding: 8,
+    padding: 10,
     borderRadius: 8,
-    marginBottom: 12,
+    marginBottom: 16,
     borderWidth: 1,
     borderColor: '#ffeaa7',
   },
   allergyText: {
     fontSize: 12,
     color: '#856404',
-    textAlign: 'center',
+    marginLeft: 6,
     fontWeight: '500',
   },
   searchContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginBottom: 16,
-    gap: 8,
+  },
+  searchIcon: {
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
     fontSize: 16,
+    color: '#333',
   },
-  searchButton: {
-    backgroundColor: '#00C897',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+  centered: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    minWidth: 80,
+    padding: 20,
   },
-  searchButtonText: {
+  loadingText: {
+    color: '#666',
+    marginTop: 16,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: '#ff6b6b',
+    fontSize: 16,
+    marginTop: 8,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  emptyText: {
+    color: '#aaa',
+    fontSize: 16,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: '#00C897',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
-  basedOnText: {
-    fontSize: 12,
-    color: '#888',
-    textAlign: 'center',
-    marginBottom: 16,
-    fontStyle: 'italic',
+  listContent: {
+    paddingBottom: 30,
   },
   card: {
-    backgroundColor: '#f9f9f9',
-    padding: 16,
-    marginBottom: 12,
-    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    marginBottom: 16,
     shadowColor: '#000',
-    shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+    overflow: 'hidden',
   },
   image: {
     width: '100%',
     height: width * 0.5,
-    borderRadius: 8,
-    marginBottom: 12,
+  },
+  cardContent: {
+    padding: 16,
   },
   title: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontWeight: 'bold',
     color: '#333',
+    marginBottom: 12,
+  },
+  metaContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   metaText: {
+    fontSize: 13,
+    color: '#666',
+    marginLeft: 4,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  ratingText: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 4,
+    marginLeft: 4,
   },
-  ingredients: {
+  ingredientsContainer: {
+    marginBottom: 8,
+  },
+  ingredientsLabel: {
     fontSize: 13,
-    marginBottom: 4,
-    color: '#444',
+    fontWeight: '600',
+    color: '#00C897',
+    marginBottom: 2,
   },
-  missing: {
-    color: '#999',
+  ingredientsText: {
+    fontSize: 13,
+    color: '#555',
+  },
+  missingLabel: {
+    color: '#ff6b6b',
+  },
+  missingText: {
+    color: '#888',
     fontStyle: 'italic',
   },
-  link: {
+  viewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  viewButtonText: {
     color: '#00C897',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginTop: 8,
+    fontWeight: '600',
+    marginRight: 4,
   },
 });
