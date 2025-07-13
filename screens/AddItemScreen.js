@@ -18,6 +18,7 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { supabase } from '../lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
 
@@ -48,9 +49,9 @@ const OPENED_ITEM_SHELF_LIFE = {
 };
 
 const STORAGE_CONDITIONS = [
-  { value: 'refrigerated', label: 'Refrigerated (0-4°C)', icon: '❄️' },
-  { value: 'room_temp', label: 'Room Temperature', icon: '🌡️' },
-  { value: 'frozen', label: 'Frozen (-18°C)', icon: '🧊' },
+  { value: 'refrigerated', label: 'Refrigerated', icon: 'snow' },
+  { value: 'room_temp', label: 'Room Temp', icon: 'thermometer' },
+  { value: 'frozen', label: 'Frozen', icon: 'ice-cream' },
 ];
 
 export default function AddItemScreen({ route, navigation }) {
@@ -203,7 +204,7 @@ export default function AddItemScreen({ route, navigation }) {
 
   const getStorageIcon = (condition) => {
     const storage = STORAGE_CONDITIONS.find(s => s.value === condition);
-    return storage ? storage.icon : '📦';
+    return storage ? storage.icon : 'cube';
   };
 
   const getStorageLabel = (condition) => {
@@ -396,7 +397,7 @@ export default function AddItemScreen({ route, navigation }) {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Select Unit</Text>
             <TouchableOpacity onPress={() => setShowUnitPicker(false)}>
-              <Text style={styles.modalCloseButton}>✕</Text>
+              <Ionicons name="close" size={24} color="#666" />
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.unitList}>
@@ -438,7 +439,7 @@ export default function AddItemScreen({ route, navigation }) {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Storage Condition</Text>
             <TouchableOpacity onPress={() => setShowStoragePicker(false)}>
-              <Text style={styles.modalCloseButton}>✕</Text>
+              <Ionicons name="close" size={24} color="#666" />
             </TouchableOpacity>
           </View>
           <View style={styles.storageOptions}>
@@ -454,7 +455,7 @@ export default function AddItemScreen({ route, navigation }) {
                   setShowStoragePicker(false);
                 }}
               >
-                <Text style={styles.storageOptionIcon}>{condition.icon}</Text>
+                <Ionicons name={condition.icon} size={24} color={storageCondition === condition.value ? '#fff' : '#4CAF50'} />
                 <Text style={[
                   styles.storageOptionText,
                   storageCondition === condition.value && styles.storageOptionTextSelected
@@ -469,426 +470,455 @@ export default function AddItemScreen({ route, navigation }) {
     </Modal>
   );
 
-// Updated section from AddItemScreen.js
-// Replace the ImageOptionsModal component with this updated version
-
-const ImageOptionsModal = () => (
-  <Modal
-    visible={showImageOptions}
-    transparent={true}
-    animationType="slide"
-    onRequestClose={() => setShowImageOptions(false)}
-  >
-    <View style={styles.modalOverlay}>
-      <View style={styles.modalContent}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Add Photo</Text>
-          <TouchableOpacity onPress={() => setShowImageOptions(false)}>
-            <Text style={styles.modalCloseButton}>✕</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.imageOptions}>
-          <TouchableOpacity
-            style={styles.imageOption}
-            onPress={() => {
-              setShowImageOptions(false);
-              // Use the correct screen name - check your navigator configuration
-              navigation.navigate('Camera', {
-                returnScreen: 'AddItem', // or whatever your screen is named in the navigator
-                timestamp: Date.now(), // Forces fresh navigation
-              });
-            }}
-          >
-            <Text style={styles.imageOptionIcon}>📷</Text>
-            <Text style={styles.imageOptionText}>Take Photo</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.imageOption}
-            onPress={selectImageFromLibrary}
-          >
-            <Text style={styles.imageOptionIcon}>🖼️</Text>
-            <Text style={styles.imageOptionText}>Choose from Library</Text>
-          </TouchableOpacity>
-          
-          {itemImage && (
+  const ImageOptionsModal = () => (
+    <Modal
+      visible={showImageOptions}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowImageOptions(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add Photo</Text>
+            <TouchableOpacity onPress={() => setShowImageOptions(false)}>
+              <Ionicons name="close" size={24} color="#666" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.imageOptions}>
             <TouchableOpacity
               style={styles.imageOption}
-              onPress={removeImage}
+              onPress={() => {
+                setShowImageOptions(false);
+                navigation.navigate('Camera', {
+                  returnScreen: 'AddItem',
+                  timestamp: Date.now(),
+                });
+              }}
             >
-              <Text style={styles.imageOptionIcon}>🗑️</Text>
-              <Text style={styles.imageOptionText}>Remove Photo</Text>
+              <Ionicons name="camera" size={24} color="#00C897" />
+              <Text style={styles.imageOptionText}>Take Photo</Text>
             </TouchableOpacity>
-          )}
+
+            <TouchableOpacity
+              style={styles.imageOption}
+              onPress={selectImageFromLibrary}
+            >
+              <Ionicons name="image" size={24} color="#00C897" />
+              <Text style={styles.imageOptionText}>Choose from Library</Text>
+            </TouchableOpacity>
+            
+            {itemImage && (
+              <TouchableOpacity
+                style={styles.imageOption}
+                onPress={removeImage}
+              >
+                <Ionicons name="trash" size={24} color="#F44336" />
+                <Text style={[styles.imageOptionText, { color: '#F44336' }]}>Remove Photo</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
-    </View>
-  </Modal>
-);
+    </Modal>
+  );
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>{editingItem ? 'Edit Item' : 'Add New Item'}</Text>
-
-      <Text style={styles.label}>Item Name *</Text>
-      <TextInput
-        style={styles.input}
-        value={itemName}
-        onChangeText={setItemName}
-        placeholder="e.g. Fresh Tomatoes"
-        placeholderTextColor="#999"
-        autoCapitalize="words"
-      />
-
-      <View style={styles.quantityContainer}>
-        <View style={styles.quantityInputContainer}>
-          <Text style={styles.label}>Quantity *</Text>
-          <TextInput
-            style={styles.quantityInput}
-            value={quantity}
-            onChangeText={setQuantity}
-            keyboardType="numeric"
-            placeholder="e.g. 2"
-            placeholderTextColor="#999"
-          />
-        </View>
-        <View style={styles.unitContainer}>
-          <Text style={styles.label}>Unit</Text>
-          <TouchableOpacity
-            style={styles.unitButton}
-            onPress={() => setShowUnitPicker(true)}
-          >
-            <Text style={styles.unitButtonText}>{quantityUnit}</Text>
-            <Text style={styles.unitButtonIcon}>⌄</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <Text style={styles.label}>Expiration Date *</Text>
-      <TouchableOpacity 
-        style={styles.dateButton}
-        onPress={() => setShowDatePicker(true)}
+    <View style={styles.screenContainer}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.dateButtonText}>
-          {formatDate(expirationDate)}
-        </Text>
-        <Text style={styles.dateButtonIcon}>📅</Text>
-      </TouchableOpacity>
-
-      {showDatePicker && (
-        <DateTimePicker
-          value={expirationDate}
-          mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={handleDateChange}
-          minimumDate={new Date()}
-        />
-      )}
-
-      <View style={styles.openedContainer}>
-        <Text style={styles.label}>Item Status</Text>
-        <View style={styles.switchContainer}>
-          <Text style={styles.switchLabel}>Item is opened</Text>
-          <Switch
-            value={isOpened}
-            onValueChange={setIsOpened}
-            trackColor={{ false: '#767577', true: '#00C897' }}
-            thumbColor={isOpened ? '#fff' : '#f4f3f4'}
-          />
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>{editingItem ? 'Edit Item' : 'Add New Item'}</Text>
+          <View style={styles.headerRight} />
         </View>
-      </View>
 
-      {isOpened && (
-        <View style={styles.openedDetailsContainer}>
-          <Text style={styles.label}>Opening Date</Text>
-          <TouchableOpacity 
-            style={styles.dateButton}
-            onPress={() => setShowOpeningDatePicker(true)}
-          >
-            <Text style={styles.dateButtonText}>
-              {formatDate(openingDate)}
-            </Text>
-            <Text style={styles.dateButtonIcon}>📅</Text>
-          </TouchableOpacity>
-
-          {showOpeningDatePicker && (
-            <DateTimePicker
-              value={openingDate}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={handleOpeningDateChange}
-              maximumDate={new Date()}
-            />
-          )}
-
-          <Text style={styles.label}>Storage Condition *</Text>
+        {/* Main Form */}
+        <View style={styles.formContainer}>
+          {/* Item Image */}
           <TouchableOpacity
-            style={styles.storageButton}
-            onPress={() => setShowStoragePicker(true)}
+            style={styles.imageButton}
+            onPress={handleImagePicker}
           >
-            <View style={styles.storageButtonContent}>
-              <Text style={styles.storageButtonIcon}>
-                {getStorageIcon(storageCondition)}
-              </Text>
-              <Text style={styles.storageButtonText}>
-                {getStorageLabel(storageCondition)}
-              </Text>
-            </View>
-            <Text style={styles.storageButtonArrow}>⌄</Text>
+            {itemImage ? (
+              <Image source={{ uri: itemImage }} style={styles.itemImage} />
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <Ionicons name="camera" size={32} color="#00C897" />
+                <Text style={styles.imagePlaceholderText}>Add Photo</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
-          {calculatedExpirationDate && (
-            <View style={styles.expirationCalculation}>
-              <Text style={styles.calculationTitle}>📊 Calculated Expiration</Text>
-              <Text style={styles.calculationDate}>
-                {formatDate(calculatedExpirationDate)}
+          {/* Item Name */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Item Name *</Text>
+            <TextInput
+              style={styles.input}
+              value={itemName}
+              onChangeText={setItemName}
+              placeholder="e.g. Fresh Tomatoes"
+              placeholderTextColor="#999"
+              autoCapitalize="words"
+            />
+          </View>
+
+          {/* Quantity and Unit */}
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, { flex: 2, marginRight: 10 }]}>
+              <Text style={styles.inputLabel}>Quantity *</Text>
+              <TextInput
+                style={styles.input}
+                value={quantity}
+                onChangeText={setQuantity}
+                keyboardType="numeric"
+                placeholder="e.g. 2"
+                placeholderTextColor="#999"
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.inputLabel}>Unit</Text>
+              <TouchableOpacity
+                style={styles.pickerButton}
+                onPress={() => setShowUnitPicker(true)}
+              >
+                <Text style={styles.pickerButtonText}>{quantityUnit}</Text>
+                <Ionicons name="chevron-down" size={16} color="#666" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Expiration Date */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Expiration Date *</Text>
+            <TouchableOpacity 
+              style={styles.pickerButton}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={styles.pickerButtonText}>
+                {formatDate(expirationDate)}
               </Text>
-              <Text style={styles.calculationDays}>
-                ({getDaysUntilExpiration(calculatedExpirationDate)} days from now)
-              </Text>
+              <Ionicons name="calendar" size={16} color="#666" />
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={expirationDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleDateChange}
+                minimumDate={new Date()}
+              />
+            )}
+          </View>
+
+          {/* Quick Date Selection */}
+          <View style={styles.quickDateContainer}>
+            <Text style={styles.quickDateLabel}>Quick select:</Text>
+            <View style={styles.quickDateButtons}>
+              <TouchableOpacity
+                style={styles.quickDateButton}
+                onPress={() => {
+                  const tomorrow = new Date();
+                  tomorrow.setDate(tomorrow.getDate() + 1);
+                  setExpirationDate(tomorrow);
+                }}
+              >
+                <Text style={styles.quickDateButtonText}>Tomorrow</Text>
+              </TouchableOpacity>
               
-              {showExpirationWarning && (
-                <View style={styles.warningContainer}>
-                  <Text style={styles.warningIcon}>⚠️</Text>
-                  <Text style={styles.warningText}>
-                    Storage conditions significantly reduce shelf life from original expiration date
+              <TouchableOpacity
+                style={styles.quickDateButton}
+                onPress={() => {
+                  const nextWeek = new Date();
+                  nextWeek.setDate(nextWeek.getDate() + 7);
+                  setExpirationDate(nextWeek);
+                }}
+              >
+                <Text style={styles.quickDateButtonText}>1 Week</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={styles.quickDateButton}
+                onPress={() => {
+                  const nextMonth = new Date();
+                  nextMonth.setMonth(nextMonth.getMonth() + 1);
+                  setExpirationDate(nextMonth);
+                }}
+              >
+                <Text style={styles.quickDateButtonText}>1 Month</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Item Status */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Item Status</Text>
+            <View style={styles.switchContainer}>
+              <Text style={styles.switchLabel}>Item is opened</Text>
+              <Switch
+                value={isOpened}
+                onValueChange={setIsOpened}
+                trackColor={{ false: '#E0E0E0', true: '#43d9b4' }}
+                thumbColor={isOpened ? '#00C897' : '#f4f3f4'}
+              />
+            </View>
+          </View>
+
+          {/* Opened Item Details */}
+          {isOpened && (
+            <View style={styles.openedDetailsContainer}>
+              {/* Opening Date */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Opening Date</Text>
+                <TouchableOpacity 
+                  style={styles.pickerButton}
+                  onPress={() => setShowOpeningDatePicker(true)}
+                >
+                  <Text style={styles.pickerButtonText}>
+                    {formatDate(openingDate)}
                   </Text>
+                  <Ionicons name="calendar" size={16} color="#666" />
+                </TouchableOpacity>
+                {showOpeningDatePicker && (
+                  <DateTimePicker
+                    value={openingDate}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handleOpeningDateChange}
+                    maximumDate={new Date()}
+                  />
+                )}
+              </View>
+
+              {/* Storage Condition */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Storage Condition *</Text>
+                <TouchableOpacity
+                  style={styles.pickerButton}
+                  onPress={() => setShowStoragePicker(true)}
+                >
+                  <Ionicons name={getStorageIcon(storageCondition)} size={16} color="#666" />
+                  <Text style={styles.pickerButtonText}>
+                    {getStorageLabel(storageCondition)}
+                  </Text>
+                  <Ionicons name="chevron-down" size={16} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Calculated Expiration */}
+              {calculatedExpirationDate && (
+                <View style={styles.expirationCalculation}>
+                  <Text style={styles.calculationTitle}>Calculated Expiration</Text>
+                  <Text style={styles.calculationDate}>
+                    {formatDate(calculatedExpirationDate)}
+                  </Text>
+                  <Text style={styles.calculationDays}>
+                    ({getDaysUntilExpiration(calculatedExpirationDate)} days from now)
+                  </Text>
+                  
+                  {showExpirationWarning && (
+                    <View style={styles.warningContainer}>
+                      <Ionicons name="warning" size={16} color="#FF9800" />
+                      <Text style={styles.warningText}>
+                        Storage conditions significantly reduce shelf life
+                      </Text>
+                    </View>
+                  )}
                 </View>
               )}
             </View>
           )}
-        </View>
-      )}
 
-      <Text style={styles.label}>Description</Text>
-      <TextInput
-        style={styles.descriptionInput}
-        value={description}
-        onChangeText={setDescription}
-        placeholder="e.g. Ingredients: flour, eggs, milk, sugar..."
-        placeholderTextColor="#999"
-        multiline
-        numberOfLines={4}
-        textAlignVertical="top"
-      />
-
-      <Text style={styles.label}>Photo</Text>
-      <TouchableOpacity
-        style={styles.imageButton}
-        onPress={handleImagePicker}
-      >
-        {itemImage ? (
-          <Image source={{ uri: itemImage }} style={styles.itemImage} />
-        ) : (
-          <View style={styles.imagePlaceholder}>
-            <Text style={styles.imagePlaceholderIcon}>📷</Text>
-            <Text style={styles.imagePlaceholderText}>Add Photo</Text>
+          {/* Description */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Description</Text>
+            <TextInput
+              style={styles.descriptionInput}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="e.g. Ingredients: flour, eggs, milk, sugar..."
+              placeholderTextColor="#999"
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
           </View>
-        )}
-      </TouchableOpacity>
 
-      <View style={styles.quickDateContainer}>
-        <Text style={styles.quickDateLabel}>Quick select expiration:</Text>
-        <View style={styles.quickDateButtons}>
+          {/* Save Button */}
           <TouchableOpacity
-            style={styles.quickDateButton}
-            onPress={() => {
-              const tomorrow = new Date();
-              tomorrow.setDate(tomorrow.getDate() + 1);
-              setExpirationDate(tomorrow);
-            }}
+            style={[styles.saveButton, loading && styles.saveButtonDisabled]}
+            onPress={handleSave}
+            disabled={loading}
           >
-            <Text style={styles.quickDateButtonText}>Tomorrow</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.quickDateButton}
-            onPress={() => {
-              const nextWeek = new Date();
-              nextWeek.setDate(nextWeek.getDate() + 7);
-              setExpirationDate(nextWeek);
-            }}
-          >
-            <Text style={styles.quickDateButtonText}>1 Week</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={styles.quickDateButton}
-            onPress={() => {
-              const nextMonth = new Date();
-              nextMonth.setMonth(nextMonth.getMonth() + 1);
-              setExpirationDate(nextMonth);
-            }}
-          >
-            <Text style={styles.quickDateButtonText}>1 Month</Text>
+            <Text style={styles.saveButtonText}>
+              {loading ? 'Saving...' : editingItem ? 'Update Item' : 'Add Item'}
+            </Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
 
-      <TouchableOpacity
-        style={[styles.saveButton, loading && styles.saveButtonDisabled]}
-        onPress={handleSave}
-        disabled={loading}
-      >
-        <Text style={styles.saveButtonText}>
-          {loading ? 'Saving...' : editingItem ? 'Update Item' : 'Add Item'}
-        </Text>
-      </TouchableOpacity>
-
+      {/* Modals */}
       <UnitPickerModal />
       <StoragePickerModal />
       <ImageOptionsModal />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    padding: 20, 
-    backgroundColor: '#fff' 
+  screenContainer: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
   },
-  title: { 
-    fontSize: 24, 
-    fontWeight: 'bold', 
+  scrollContainer: {
+    paddingBottom: 30,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  backButton: {
+    padding: 5,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+  },
+  headerRight: {
+    width: 24,
+  },
+  formContainer: {
+    padding: 20,
+  },
+  imageButton: {
+    height: 150,
+    borderRadius: 12,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
     marginBottom: 20,
-    color: '#333'
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
   },
-  label: { 
-    fontSize: 16, 
-    fontWeight: '600', 
-    marginTop: 15,
+  itemImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imagePlaceholder: {
+    alignItems: 'center',
+  },
+  imagePlaceholderText: {
+    fontSize: 14,
+    color: '#757575',
+    marginTop: 8,
+  },
+  inputGroup: {
+    marginBottom: 15,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#616161',
     marginBottom: 8,
-    color: '#333'
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#FAFAFA',
     borderRadius: 8,
     padding: 12,
-    backgroundColor: '#f9f9f9',
-    marginBottom: 10,
-    fontSize: 16,
-  },
-  quantityContainer: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  quantityInputContainer: {
-    flex: 2,
-  },
-  quantityInput: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#f9f9f9',
-    fontSize: 16,
-  },
-  unitContainer: {
-    flex: 1,
-  },
-  unitButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#f9f9f9',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  unitButtonText: {
+    borderColor: '#E0E0E0',
     fontSize: 16,
     color: '#333',
   },
-  unitButtonIcon: {
-    fontSize: 16,
-    color: '#666',
-  },
-  dateButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#f9f9f9',
-    marginBottom: 10,
+  row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
   },
-  dateButtonText: {
+  pickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FAFAFA',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  pickerButtonText: {
     fontSize: 16,
     color: '#333',
   },
-  dateButtonIcon: {
-    fontSize: 20,
+  quickDateContainer: {
+    marginBottom: 15,
   },
-  openedContainer: {
-    marginTop: 10,
+  quickDateLabel: {
+    fontSize: 12,
+    color: '#757575',
+    marginBottom: 8,
   },
-  openedDetailsContainer: {
-    backgroundColor: '#f8f9fa',
-    padding: 15,
-    borderRadius: 8,
-    marginTop: 10,
+  quickDateButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  quickDateButton: {
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  quickDateButtonText: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '500',
   },
   switchContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
   switchLabel: {
     fontSize: 16,
     color: '#333',
   },
-  storageButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+  openedDetailsContainer: {
+    backgroundColor: '#F8F9FA',
     borderRadius: 8,
-    padding: 12,
-    backgroundColor: '#fff',
+    padding: 15,
     marginBottom: 15,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  storageButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  storageButtonIcon: {
-    fontSize: 20,
-    marginRight: 10,
-  },
-  storageButtonText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  storageButtonArrow: {
-    fontSize: 16,
-    color: '#666',
   },
   expirationCalculation: {
-    backgroundColor: '#e3f2fd',
-    padding: 15,
+    backgroundColor: '#E3F2FD',
     borderRadius: 8,
+    padding: 15,
     marginTop: 10,
   },
   calculationTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1976d2',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1976D2',
     marginBottom: 5,
   },
   calculationDate: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
   },
   calculationDays: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginTop: 2,
   },
@@ -897,104 +927,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 10,
     padding: 10,
-    backgroundColor: '#fff3cd',
+    backgroundColor: '#FFF3CD',
     borderRadius: 6,
   },
-  warningIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
   warningText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#856404',
+    marginLeft: 8,
     flex: 1,
   },
   descriptionInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#FAFAFA',
     borderRadius: 8,
     padding: 12,
-    backgroundColor: '#f9f9f9',
-    marginBottom: 10,
-    fontSize: 16,
-    height: 100,
-  },
-  imageButton: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
-    marginBottom: 10,
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  itemImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 8,
-  },
-  imagePlaceholder: {
-    alignItems: 'center',
-  },
-  imagePlaceholderIcon: {
-    fontSize: 48,
-    marginBottom: 10,
-  },
-  imagePlaceholderText: {
+    borderColor: '#E0E0E0',
     fontSize: 16,
-    color: '#666',
+    color: '#333',
+    height: 100,
+    textAlignVertical: 'top',
   },
   saveButton: {
     backgroundColor: '#00C897',
-    paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 8,
+    padding: 16,
     alignItems: 'center',
-    marginTop: 30,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  saveButtonDisabled: { 
-    backgroundColor: '#ccc',
-    elevation: 0,
-    shadowOpacity: 0,
-  },
-  saveButtonText: { 
-    color: '#fff', 
-    fontSize: 18, 
-    fontWeight: 'bold' 
-  },
-  quickDateContainer: {
     marginTop: 20,
-    marginBottom: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
   },
-  quickDateLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 10,
+  saveButtonDisabled: {
+    backgroundColor: '#BDBDBD',
   },
-  quickDateButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  quickDateButton: {
-    backgroundColor: '#f0f0f0',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ddd',
-  },
-  quickDateButtonText: {
-    fontSize: 14,
-    color: '#00C897',
-    fontWeight: '500',
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -1006,7 +972,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 20,
-    width: width * 0.8,
+    width: width * 0.85,
     maxHeight: '70%',
   },
   modalHeader: {
@@ -1017,12 +983,8 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#333',
-  },
-  modalCloseButton: {
-    fontSize: 24,
-    color: '#666',
   },
   unitList: {
     maxHeight: 300,
@@ -1033,15 +995,15 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   unitOptionSelected: {
-    backgroundColor: '#00C897',
+    backgroundColor: '#E8F5E9',
   },
   unitOptionText: {
     fontSize: 16,
     color: '#333',
   },
   unitOptionTextSelected: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: '#4CAF50',
+    fontWeight: '600',
   },
   storageOptions: {
     gap: 10,
@@ -1051,25 +1013,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 15,
     borderRadius: 8,
-    backgroundColor: '#f9f9f9',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#E0E0E0',
   },
   storageOptionSelected: {
-    backgroundColor: '#00C897',
-    borderColor: '#00C897',
-  },
-  storageOptionIcon: {
-    fontSize: 24,
-    marginRight: 15,
+    backgroundColor: '#E8F5E9',
+    borderColor: '#4CAF50',
   },
   storageOptionText: {
     fontSize: 16,
     color: '#333',
+    marginLeft: 15,
   },
   storageOptionTextSelected: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: '#4CAF50',
+    fontWeight: '600',
   },
   imageOptions: {
     gap: 15,
@@ -1078,15 +1036,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 15,
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
-  },
-  imageOptionIcon: {
-    fontSize: 24,
-    marginRight: 15,
   },
   imageOptionText: {
     fontSize: 16,
     color: '#333',
+    marginLeft: 15,
   },
 });

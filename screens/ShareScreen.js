@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
+import { Ionicons } from '@expo/vector-icons';
 
 // Constants
 const TABS = {
@@ -166,72 +167,68 @@ const useShareData = (currentUser) => {
   }, []);
 
   const fetchMySharedItems = useCallback(async (userId) => {
-  try {
-    const { data, error } = await supabase
-      .from('shared_items')
-      .select(`
-        id, 
-        offered_at, 
-        status,
-        item_link,
-        pantry_items!shared_items_item_link_fkey(
-          id,
-          item_name, 
-          expiration_date, 
-          quantity
-        )
-      `)
-      .eq('user_id', userId)
-      .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED])
-      .order('offered_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('shared_items')
+        .select(`
+          id, 
+          offered_at, 
+          status,
+          item_link,
+          pantry_items!shared_items_item_link_fkey(
+            id,
+            item_name, 
+            expiration_date, 
+            quantity
+          )
+        `)
+        .eq('user_id', userId)
+        .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED])
+        .order('offered_at', { ascending: false });
 
-    if (error) throw error;
-    
-    // Filter out items where the pantry_items join failed (item might have been deleted)
-    const validItems = (data || []).filter(item => item.pantry_items);
-    
-    setMySharedItems(validItems);
-  } catch (err) {
-    console.error('Error fetching my shared items:', err);
-    setMySharedItems([]);
-  }
-}, []);
+      if (error) throw error;
+      
+      const validItems = (data || []).filter(item => item.pantry_items);
+      setMySharedItems(validItems);
+    } catch (err) {
+      console.error('Error fetching my shared items:', err);
+      setMySharedItems([]);
+    }
+  }, []);
 
   const fetchMyPantryItems = useCallback(async (userId) => {
-  try {
-    const { data: sharedItemIds, error: sharedError } = await supabase
-      .from('shared_items')
-      .select('item_link')
-      .eq('user_id', userId)
-      .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
+    try {
+      const { data: sharedItemIds, error: sharedError } = await supabase
+        .from('shared_items')
+        .select('item_link')
+        .eq('user_id', userId)
+        .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
 
-    if (sharedError) throw sharedError;
+      if (sharedError) throw sharedError;
 
-    // Filter out null, undefined, and empty values, and ensure they're valid integers
-    const excludeIds = sharedItemIds
-      .map(item => item.item_link)
-      .filter(id => id != null && id !== '' && !isNaN(parseInt(id)))
-      .map(id => parseInt(id));
+      const excludeIds = sharedItemIds
+        .map(item => item.item_link)
+        .filter(id => id != null && id !== '' && !isNaN(parseInt(id)))
+        .map(id => parseInt(id));
 
-    let query = supabase
-      .from('pantry_items')
-      .select('id, item_name, expiration_date, quantity')
-      .eq('user_id', userId)
-      .order('expiration_date', { ascending: true });
+      let query = supabase
+        .from('pantry_items')
+        .select('id, item_name, expiration_date, quantity')
+        .eq('user_id', userId)
+        .order('expiration_date', { ascending: true });
 
-    // Only add the exclusion filter if we have valid IDs to exclude
-    if (excludeIds.length > 0) {
-      query = query.not('id', 'in', `(${excludeIds.join(',')})`);
+      if (excludeIds.length > 0) {
+        query = query.not('id', 'in', `(${excludeIds.join(',')})`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setMyPantryItems(data || []);
+    } catch (err) {
+      console.error('Error fetching pantry items:', err);
+      setMyPantryItems([]);
     }
-
-    const { data, error } = await query;
-    if (error) throw error;
-    setMyPantryItems(data || []);
-  } catch (err) {
-    console.error('Error fetching pantry items:', err);
-    setMyPantryItems([]);
-  }
-}, []);
+  }, []);
 
   const refreshAllData = useCallback(async () => {
     if (!currentUser) return;
@@ -472,46 +469,44 @@ export default function ShareScreen({ navigation }) {
   }, [currentUser?.id, refreshAllData]);
 
   const handleShareItem = useCallback(async (itemId) => {
-  if (!currentUser) return;
-  
-  try {
-    // Check if item is already shared
-    const { data: existingShare, error: checkError } = await supabase
-      .from('shared_items')
-      .select('id')
-      .eq('item_link', itemId)  // Changed from item_id to item_link
-      .eq('user_id', currentUser.id)
-      .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
+    if (!currentUser) return;
+    
+    try {
+      const { data: existingShare, error: checkError } = await supabase
+        .from('shared_items')
+        .select('id')
+        .eq('item_link', itemId)
+        .eq('user_id', currentUser.id)
+        .in('status', [STATUSES.AVAILABLE, STATUSES.REQUESTED]);
 
-    if (checkError && checkError.code !== 'PGRST116') {
-      throw checkError;
+      if (checkError && checkError.code !== 'PGRST116') {
+        throw checkError;
+      }
+
+      if (existingShare && existingShare.length > 0) {
+        Alert.alert("Already Shared", "This item is already being shared.");
+        return;
+      }
+
+      const { error } = await supabase
+        .from('shared_items')
+        .insert({
+          item_link: itemId,
+          user_id: currentUser.id,
+          status: STATUSES.AVAILABLE,
+          offered_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Item shared with your neighbors!');
+      shareModal.close();
+      await refreshAllData();
+    } catch (err) {
+      console.error('Share error:', err);
+      Alert.alert('Error', 'Failed to share item. Please try again.');
     }
-
-    if (existingShare && existingShare.length > 0) {
-      Alert.alert("Already Shared", "This item is already being shared.");
-      return;
-    }
-
-    // Insert new shared item
-    const { error } = await supabase
-      .from('shared_items')
-      .insert({
-        item_link: itemId,  // Changed from item_id to item_link
-        user_id: currentUser.id,
-        status: STATUSES.AVAILABLE,
-        offered_at: new Date().toISOString()
-      });
-
-    if (error) throw error;
-
-    Alert.alert('Success', 'Item shared with your neighbors!');
-    shareModal.close();
-    await refreshAllData();
-  } catch (err) {
-    console.error('Share error:', err);
-    Alert.alert('Error', 'Failed to share item. Please try again.');
-  }
-}, [currentUser, shareModal, refreshAllData]);
+  }, [currentUser, shareModal, refreshAllData]);
 
   const handleOfferHelp = useCallback(async (requestId) => {
     try {
@@ -561,7 +556,8 @@ export default function ShareScreen({ navigation }) {
         onPress={() => offerModal.open(item)}
         accessibilityLabel={`Offer help for ${item.item_name}`}
       >
-        <Text style={styles.helpButtonText}>🤝 Offer Help</Text>
+        <Ionicons name="hand-left" size={20} color="#fff" />
+        <Text style={styles.helpButtonText}> Offer Help</Text>
       </TouchableOpacity>
     </View>
   ), [offerModal]);
@@ -582,16 +578,19 @@ export default function ShareScreen({ navigation }) {
         </View>
         
         <View style={styles.itemDetails}>
-          <Text style={styles.detailText}>📦 Quantity: {pantryItem.quantity}</Text>
+          <Text style={styles.detailText}>
+            <Ionicons name="cube" size={16} color="#666" /> Quantity: {pantryItem.quantity}
+          </Text>
           <Text style={[styles.detailText, isExpiringSoon && styles.expiringText]}>
-            📅 Expires: {formatDate(pantryItem.expiration_date)}
+            <Ionicons name="calendar" size={16} color={isExpiringSoon ? '#FF9800' : '#666'} /> 
+            Expires: {formatDate(pantryItem.expiration_date)}
             {isExpiringSoon && ' ⚠️'}
           </Text>
           <Text style={styles.detailText}>
-            👤 From: {pantryItem.profile?.name || 'Anonymous'}
+            <Ionicons name="person" size={16} color="#666" /> From: {pantryItem.profile?.name || 'Anonymous'}
           </Text>
           <Text style={styles.detailText}>
-            📍 Shared: {formatDate(item.offered_at)}
+            <Ionicons name="time" size={16} color="#666" /> Shared: {formatDate(item.offered_at)}
           </Text>
         </View>
 
@@ -601,7 +600,8 @@ export default function ShareScreen({ navigation }) {
             onPress={() => handleRequestItem(item.id)}
             accessibilityLabel={`Request ${pantryItem.item_name}`}
           >
-            <Text style={styles.requestButtonText}>Request Item</Text>
+            <Ionicons name="cart" size={20} color="#fff" />
+            <Text style={styles.requestButtonText}> Request Item</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -624,13 +624,16 @@ export default function ShareScreen({ navigation }) {
         </View>
         
         <View style={styles.itemDetails}>
-          <Text style={styles.detailText}>📦 Quantity: {pantryItem.quantity}</Text>
+          <Text style={styles.detailText}>
+            <Ionicons name="cube" size={16} color="#666" /> Quantity: {pantryItem.quantity}
+          </Text>
           <Text style={[styles.detailText, isExpiringSoon && styles.expiringText]}>
-            📅 Expires: {formatDate(pantryItem.expiration_date)}
+            <Ionicons name="calendar" size={16} color={isExpiringSoon ? '#FF9800' : '#666'} /> 
+            Expires: {formatDate(pantryItem.expiration_date)}
             {isExpiringSoon && ' ⚠️'}
           </Text>
           <Text style={styles.detailText}>
-            📍 Shared: {formatDate(item.offered_at)}
+            <Ionicons name="time" size={16} color="#666" /> Shared: {formatDate(item.offered_at)}
           </Text>
         </View>
 
@@ -640,7 +643,8 @@ export default function ShareScreen({ navigation }) {
             onPress={() => handleRemoveSharedItem(item.id)}
             accessibilityLabel={`Stop sharing ${pantryItem.item_name}`}
           >
-            <Text style={styles.removeButtonText}>Delete Sharing</Text>
+            <Ionicons name="trash" size={20} color="#fff" />
+            <Text style={styles.removeButtonText}> Delete Sharing</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -657,9 +661,12 @@ export default function ShareScreen({ navigation }) {
         </View>
         
         <View style={styles.itemDetails}>
-          <Text style={styles.detailText}>📦 Quantity: {item.quantity}</Text>
+          <Text style={styles.detailText}>
+            <Ionicons name="cube" size={16} color="#666" /> Quantity: {item.quantity}
+          </Text>
           <Text style={[styles.detailText, isExpiringSoon && styles.expiringText]}>
-            📅 Expires: {formatDate(item.expiration_date)}
+            <Ionicons name="calendar" size={16} color={isExpiringSoon ? '#FF9800' : '#666'} /> 
+            Expires: {formatDate(item.expiration_date)}
             {isExpiringSoon && ' ⚠️'}
           </Text>
         </View>
@@ -669,7 +676,8 @@ export default function ShareScreen({ navigation }) {
           onPress={() => shareModal.open(item)}
           accessibilityLabel={`Share ${item.item_name}`}
         >
-          <Text style={styles.shareButtonText}>📤 Share</Text>
+          <Ionicons name="share-social" size={20} color="#fff" />
+          <Text style={styles.shareButtonText}> Share</Text>
         </TouchableOpacity>
       </View>
     );
@@ -677,7 +685,7 @@ export default function ShareScreen({ navigation }) {
 
   const renderEmptyState = useCallback((icon, title, text) => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyIcon}>{icon}</Text>
+      <Ionicons name={icon} size={48} color="#9E9E9E" />
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyText}>{text}</Text>
     </View>
@@ -688,22 +696,22 @@ export default function ShareScreen({ navigation }) {
       [TABS.AVAILABLE]: {
         data: enrichedSharedItems,
         renderItem: renderNearbyItem,
-        emptyState: renderEmptyState('🏠', 'No items available', 'No neighbors are sharing items right now. Check back later!'),
+        emptyState: renderEmptyState('home', 'No items available', 'No neighbors are sharing items right now. Check back later!'),
       },
       [TABS.REQUESTS]: {
         data: foodRequests,
         renderItem: renderFoodRequest,
-        emptyState: renderEmptyState('🤝', 'No food requests', 'No neighbors are requesting food right now. Check back later!'),
+        emptyState: renderEmptyState('hand-left', 'No food requests', 'No neighbors are requesting food right now. Check back later!'),
       },
       [TABS.MY_SHARED]: {
         data: enrichedMySharedItems,
         renderItem: renderMySharedItem,
-        emptyState: renderEmptyState('📤', 'No shared items', "You haven't shared any items yet. Share items from your pantry to help your neighbors!"),
+        emptyState: renderEmptyState('share-social', 'No shared items', "You haven't shared any items yet. Share items from your pantry to help your neighbors!"),
       },
       [TABS.MY_PANTRY]: {
         data: enrichedMyPantryItems,
         renderItem: renderMyPantryItem,
-        emptyState: renderEmptyState('🥫', 'All items shared', "All your pantry items are already shared or you don't have any items to share."),
+        emptyState: renderEmptyState('fast-food', 'All items shared', "All your pantry items are already shared or you don't have any items to share."),
       },
     };
 
@@ -720,8 +728,8 @@ export default function ShareScreen({ navigation }) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={['#00C897']}
-            tintColor="#00C897"
+            colors={['#4CAF50']}
+            tintColor="#4CAF50"
           />
         }
         showsVerticalScrollIndicator={false}
@@ -759,7 +767,7 @@ export default function ShareScreen({ navigation }) {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#00C897" />
+          <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Loading sharing options...</Text>
         </View>
       </SafeAreaView>
@@ -771,8 +779,11 @@ export default function ShareScreen({ navigation }) {
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
 
       <View style={styles.header}>
-        <Text style={styles.title}>Community Sharing</Text>
-        <Text style={styles.subtitle}>Share food, reduce waste</Text>
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Community Sharing</Text>
+          <Text style={styles.subtitle}>Share food, reduce waste</Text>
+        </View>
+        <Ionicons name="fast-food" size={80} color="#4CAF50" />
       </View>
 
       <TouchableOpacity
@@ -780,7 +791,8 @@ export default function ShareScreen({ navigation }) {
         onPress={() => navigation.navigate('RequestFood')}
         accessibilityLabel="Request food from neighbors"
       >
-        <Text style={styles.requestButtonTextTop}>🤝 Request Food</Text>
+        <Ionicons name="hand-left" size={20} color="#fff" />
+        <Text style={styles.requestButtonTextTop}> Request Food</Text>
       </TouchableOpacity>
 
       {renderTabs()}
@@ -800,8 +812,11 @@ export default function ShareScreen({ navigation }) {
             {shareModal.selectedItem && (
               <View style={styles.shareItemPreview}>
                 <Text style={styles.shareItemName}>{shareModal.selectedItem.item_name}</Text>
-                <Text style={styles.shareItemDetail}>Quantity: {shareModal.selectedItem.quantity}</Text>
                 <Text style={styles.shareItemDetail}>
+                  <Ionicons name="cube" size={16} color="#666" /> Quantity: {shareModal.selectedItem.quantity}
+                </Text>
+                <Text style={styles.shareItemDetail}>
+                  <Ionicons name="calendar" size={16} color="#666" /> 
                   Expires: {formatDate(shareModal.selectedItem.expiration_date)}
                 </Text>
               </View>
@@ -824,7 +839,8 @@ export default function ShareScreen({ navigation }) {
                 onPress={() => handleShareItem(shareModal.selectedItem?.id)}
                 accessibilityLabel="Confirm sharing item"
               >
-                <Text style={styles.confirmButtonText}>📤 Share Item</Text>
+                <Ionicons name="share-social" size={20} color="#fff" />
+                <Text style={styles.confirmButtonText}> Share Item</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -848,9 +864,11 @@ export default function ShareScreen({ navigation }) {
                   {offerModal.selectedItem.item_name}
                 </Text>
                 <Text style={styles.shareItemDetail}>
+                  <Ionicons name="person" size={16} color="#666" /> 
                   Requested by: {offerModal.selectedItem.profile?.name || 'Anonymous'}
                 </Text>
                 <Text style={styles.shareItemDetail}>
+                  <Ionicons name="document-text" size={16} color="#666" /> 
                   {offerModal.selectedItem.description}
                 </Text>
               </View>
@@ -882,7 +900,8 @@ export default function ShareScreen({ navigation }) {
                 style={styles.confirmButton} 
                 onPress={() => handleOfferHelp(offerModal.selectedItem?.id)}
               >
-                <Text style={styles.confirmButtonText}>🤝 Send Offer</Text>
+                <Ionicons name="hand-left" size={20} color="#fff" />
+                <Text style={styles.confirmButtonText}> Send Offer</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -909,17 +928,23 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 20,
     paddingBottom: 10,
   },
+  headerContent: {
+    flex: 1,
+  },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 5,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: '#666',
   },
   tabContainer: {
@@ -943,7 +968,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   activeTab: {
-    backgroundColor: '#00C897',
+    backgroundColor: '#4CAF50',
   },
   tabText: {
     fontSize: 12,
@@ -992,6 +1017,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  urgencyBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  urgencyText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   itemDetails: {
     marginBottom: 12,
   },
@@ -999,16 +1035,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   expiringText: {
-    color: '#ff9800',
+    color: '#FF9800',
     fontWeight: '600',
   },
   requestButton: {
-    backgroundColor: '#00C897',
+    backgroundColor: '#4CAF50',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   requestButtonText: {
     color: '#fff',
@@ -1016,10 +1056,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   removeButton: {
-    backgroundColor: '#f44336',
+    backgroundColor: '#F44336',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   removeButtonText: {
     color: '#fff',
@@ -1031,8 +1073,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
   },
   shareButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  helpButton: {
+    backgroundColor: '#FF9800',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  helpButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
@@ -1044,12 +1101,8 @@ const styles = StyleSheet.create({
     padding: 40,
     minHeight: 200,
   },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 8,
@@ -1060,6 +1113,26 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  requestButtonTop: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#5a2ca0',
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  requestButtonTextTop: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   // Modal Styles
   modalOverlay: {
@@ -1084,7 +1157,7 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 20,
     textAlign: 'center',
@@ -1100,19 +1173,21 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   shareItemDetail: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 2,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   shareDescription: {
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 10,
+    marginBottom: 16,
   },
   messageInput: {
     borderWidth: 1,
@@ -1130,44 +1205,31 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   cancelButton: {
-    backgroundColor: '#f44336',
+    backgroundColor: '#F44336',
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 10,
     flex: 1,
+    alignItems: 'center',
   },
   cancelButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
-    textAlign: 'center',
   },
   confirmButton: {
-    backgroundColor: '#00C897',
+    backgroundColor: '#4CAF50',
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 10,
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   confirmButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  
-  // Test button styles
-  requestButtonTop: {
-    marginHorizontal: 20,
-    marginBottom: 10,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#5a2ca0',
-    alignItems: 'center',
-  },
-  requestButtonTextTop: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
   },
 });

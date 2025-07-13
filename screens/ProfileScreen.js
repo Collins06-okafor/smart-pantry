@@ -10,15 +10,24 @@ import {
   Switch,
   TouchableOpacity,
   Image,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
 import * as Location from 'expo-location';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../contexts/ThemeContext';
+
+
+const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
   const navigation = useNavigation();
+  const { theme, toggleTheme, themeName } = useTheme();
 
   const [profile, setProfile] = useState({
     name: '',
@@ -47,93 +56,43 @@ export default function ProfileScreen() {
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
   const [verificationLoading, setVerificationLoading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dateOfBirth, setDateOfBirth] = useState(new Date());
 
-  // Enhanced phone number validation function
   const validatePhoneNumber = (phoneNumber) => {
-    // Remove any non-digit characters except the + sign
     const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
     
-    // Must start with +
     if (!cleanNumber.startsWith('+')) {
       return { isValid: false, error: 'Phone number must start with country code (+)' };
     }
     
-    // Extract country code and number
     const numberWithoutPlus = cleanNumber.slice(1);
-    
-    // Common country code patterns and their max lengths
     const countryCodeRules = {
-      // 1-digit country codes
-      '1': 11,   // US/Canada: +1 + 10 digits
-      '7': 11,   // Russia/Kazakhstan: +7 + 10 digits
-      
-      // 2-digit country codes
-      '20': 12,  // Egypt: +20 + 10 digits
-      '27': 11,  // South Africa: +27 + 9 digits
-      '30': 12,  // Greece: +30 + 10 digits
-      '31': 11,  // Netherlands: +31 + 9 digits
-      '32': 11,  // Belgium: +32 + 9 digits
-      '33': 11,  // France: +33 + 9 digits
-      '34': 11,  // Spain: +34 + 9 digits
-      '36': 11,  // Hungary: +36 + 9 digits
-      '39': 12,  // Italy: +39 + 10 digits
-      '40': 11,  // Romania: +40 + 9 digits
-      '41': 11,  // Switzerland: +41 + 9 digits
-      '43': 12,  // Austria: +43 + 10 digits
-      '44': 12,  // UK: +44 + 10 digits
-      '45': 10,  // Denmark: +45 + 8 digits
-      '46': 11,  // Sweden: +46 + 9 digits
-      '47': 10,  // Norway: +47 + 8 digits
-      '48': 11,  // Poland: +48 + 9 digits
-      '49': 12,  // Germany: +49 + 10 digits
-      '52': 12,  // Mexico: +52 + 10 digits
-      '53': 10,  // Cuba: +53 + 8 digits
-      '54': 12,  // Argentina: +54 + 10 digits
-      '55': 13,  // Brazil: +55 + 11 digits
-      '56': 11,  // Chile: +56 + 9 digits
-      '57': 12,  // Colombia: +57 + 10 digits
-      '58': 11,  // Venezuela: +58 + 10 digits
-      '60': 11,  // Malaysia: +60 + 9 digits
-      '61': 11,  // Australia: +61 + 9 digits
-      '62': 12,  // Indonesia: +62 + 10 digits
-      '63': 12,  // Philippines: +63 + 10 digits
-      '64': 11,  // New Zealand: +64 + 9 digits
-      '65': 10,  // Singapore: +65 + 8 digits
-      '66': 11,  // Thailand: +66 + 9 digits
-      '81': 12,  // Japan: +81 + 10 digits
-      '82': 12,  // South Korea: +82 + 10 digits
-      '84': 11,  // Vietnam: +84 + 9 digits
-      '86': 13,  // China: +86 + 11 digits
-      '90': 13,  // Turkey: +90 + 10 digits
-      '91': 12,  // India: +91 + 10 digits
-      '92': 12,  // Pakistan: +92 + 10 digits
-      '93': 11,  // Afghanistan: +93 + 9 digits
-      '94': 11,  // Sri Lanka: +94 + 9 digits
-      '95': 11,  // Myanmar: +95 + 9 digits
-      '98': 12,  // Iran: +98 + 10 digits
+      '1': 11, '7': 11, '20': 12, '27': 11, '30': 12, '31': 11, '32': 11,
+      '33': 11, '34': 11, '36': 11, '39': 12, '40': 11, '41': 11, '43': 12,
+      '44': 12, '45': 10, '46': 11, '47': 10, '48': 11, '49': 12, '52': 12,
+      '53': 10, '54': 12, '55': 13, '56': 11, '57': 12, '58': 11, '60': 11,
+      '61': 11, '62': 12, '63': 12, '64': 11, '65': 10, '66': 11, '81': 12,
+      '82': 12, '84': 11, '86': 13, '90': 13, '91': 12, '92': 12, '93': 11,
+      '94': 11, '95': 11, '98': 12,
     };
     
-    // Find matching country code
-    let maxLength = 15; // Default international max
+    let maxLength = 15;
     let matchedCountryCode = '';
     
-    // Check for 1-digit country codes first
     if (countryCodeRules[numberWithoutPlus.slice(0, 1)]) {
       matchedCountryCode = numberWithoutPlus.slice(0, 1);
       maxLength = countryCodeRules[matchedCountryCode];
     }
-    // Then check for 2-digit country codes
     else if (countryCodeRules[numberWithoutPlus.slice(0, 2)]) {
       matchedCountryCode = numberWithoutPlus.slice(0, 2);
       maxLength = countryCodeRules[matchedCountryCode];
     }
-    // Then check for 3-digit country codes
     else if (countryCodeRules[numberWithoutPlus.slice(0, 3)]) {
       matchedCountryCode = numberWithoutPlus.slice(0, 3);
       maxLength = countryCodeRules[matchedCountryCode];
     }
     
-    // Check total length
     if (cleanNumber.length > maxLength) {
       return { 
         isValid: false, 
@@ -142,7 +101,6 @@ export default function ProfileScreen() {
       };
     }
     
-    // Minimum length check (country code + at least 6 digits)
     if (cleanNumber.length < 8) {
       return { 
         isValid: false, 
@@ -153,29 +111,50 @@ export default function ProfileScreen() {
     return { isValid: true, cleanNumber, maxLength };
   };
 
-  // Enhanced phone number input handler
   const handlePhoneNumberChange = (value) => {
-    // Remove any non-digit characters except +
     let cleanValue = value.replace(/[^\d+]/g, '');
     
-    // Ensure it starts with + if user types digits
     if (cleanValue && !cleanValue.startsWith('+')) {
       cleanValue = '+' + cleanValue;
     }
     
-    // Validate and limit length
     const validation = validatePhoneNumber(cleanValue);
     
     if (validation.isValid || cleanValue.length <= (validation.maxLength || 15)) {
       setProfile({ ...profile, phone_number: cleanValue });
     }
-    // If it's too long, don't update the state (prevent typing)
   };
 
-  // Profile photo selection function
+  const uploadProfilePhoto = async (user, photo) => {
+    try {
+      const fileName = `profile_${user.id}/${Date.now()}.jpg`;
+      
+      const response = await fetch(photo.uri);
+      const blob = await response.blob();
+
+      const { data, error } = await supabase.storage
+        .from('user-profile-photos')
+        .upload(fileName, blob, {
+          contentType: photo.type || 'image/jpeg',
+          upsert: true,
+          cacheControl: '3600'
+        });
+
+      if (error) throw error;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('user-profile-photos')
+        .getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Photo upload failed:', error);
+      throw new Error('Failed to upload profile photo');
+    }
+  };
+
   const selectProfilePhoto = async () => {
     try {
-      // Request permission to access camera and media library
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
@@ -185,7 +164,6 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Show options to user
       Alert.alert(
         'Select Profile Photo',
         'Choose how you want to select your profile photo',
@@ -213,15 +191,18 @@ export default function ProfileScreen() {
       }
 
       const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ FIXED
-    });
-
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        setProfilePhoto(result.assets[0]);
+        setProfilePhoto({
+          uri: result.assets[0].uri,
+          type: result.assets[0].type || 'image/jpeg',
+          name: `profile_${Date.now()}.jpg`
+        });
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -231,16 +212,19 @@ export default function ProfileScreen() {
 
   const pickFromLibrary = async () => {
     try {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // ✅ FIXED
-    });
-
+      const result = await ImagePicker.launchImageLibraryAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        setProfilePhoto(result.assets[0]);
+        setProfilePhoto({
+          uri: result.assets[0].uri,
+          type: result.assets[0].type || 'image/jpeg',
+          name: `profile_${Date.now()}.jpg`
+        });
       }
     } catch (error) {
       console.error('Library picker error:', error);
@@ -248,7 +232,6 @@ export default function ProfileScreen() {
     }
   };
 
-  // Remove profile photo
   const removeProfilePhoto = () => {
     Alert.alert(
       'Remove Photo',
@@ -263,23 +246,15 @@ export default function ProfileScreen() {
     );
   };
 
-  // Generate default avatar with initials
   const getDefaultAvatar = () => {
     const initials = `${profile.name?.charAt(0) || ''}${profile.surname?.charAt(0) || ''}`.toUpperCase();
     return initials || '👤';
   };
 
-  useEffect(() => {
-    loadProfile();
-    fetchWasteStats();
-  }, []);
-
   const loadProfile = useCallback(async () => {
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      setLoading(true);
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
       
       if (userError) {
         console.error('User error:', userError);
@@ -312,6 +287,11 @@ export default function ProfileScreen() {
           expiry_alerts_enabled: data.expiry_alerts_enabled ?? true,
           recipe_suggestions_enabled: data.recipe_suggestions_enabled ?? true,
         });
+        
+        if (data.date_of_birth) {
+          setDateOfBirth(new Date(data.date_of_birth));
+        }
+        
         setAllergies(
           Array.isArray(data.allergies)
             ? data.allergies.join(', ')
@@ -332,9 +312,7 @@ export default function ProfileScreen() {
 
   const fetchWasteStats = useCallback(async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) return;
 
@@ -351,6 +329,11 @@ export default function ProfileScreen() {
       console.error('Waste stats error:', error);
     }
   }, []);
+
+  useEffect(() => {
+    loadProfile();
+    fetchWasteStats();
+  }, [loadProfile, fetchWasteStats]);
 
   const sendVerificationEmail = async () => {
     try {
@@ -381,13 +364,12 @@ export default function ProfileScreen() {
 
   const validateProfile = () => {
     const errors = [];
-    const { name, surname, email, phone_number, date_of_birth } = profile;
+    const { name, surname, email, phone_number } = profile;
 
     if (!name?.trim()) errors.push('Name is required');
     if (!surname?.trim()) errors.push('Surname is required');
     if (!email?.trim()) errors.push('Email is required');
 
-    // Enhanced phone validation
     if (phone_number) {
       const phoneValidation = validatePhoneNumber(phone_number);
       if (!phoneValidation.isValid) {
@@ -395,16 +377,6 @@ export default function ProfileScreen() {
       }
     }
 
-    // Age validation
-    if (date_of_birth) {
-      const birthDate = new Date(date_of_birth);
-      const age = new Date(Date.now() - birthDate).getUTCFullYear() - 1970;
-      if (isNaN(age) || age < 17) {
-        errors.push('You must be at least 17 years old to use this app');
-      }
-    }
-
-    // Coordinate validation
     if (profile.latitude && isNaN(parseFloat(profile.latitude))) {
       errors.push('Latitude must be a valid number');
     }
@@ -451,69 +423,23 @@ export default function ProfileScreen() {
 
   const continueSavingProfile = async () => {
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
       
       if (userError || !user) {
         Alert.alert('Error', 'Authentication failed');
         return;
       }
 
-      let identity_url = profile.identity_url;
       let profile_photo_url = profile.profile_photo_url;
 
-      // Upload profile photo if selected
       if (profilePhoto) {
-        const fileName = `profile_${user.id}_${Date.now()}.jpg`;
-
-        // Convert local URI to Blob
-        const response = await fetch(profilePhoto.uri);
-        const blob = await response.blob();
-
-        const { error: uploadError } = await supabase.storage
-          .from('profile_photos')
-          .upload(fileName, blob, {
-            contentType: 'image/jpeg',
-          });
-
-        if (uploadError) {
-          console.error('Photo upload error:', uploadError);
-          Alert.alert('Upload Error', 'Failed to upload profile photo');
+        try {
+          profile_photo_url = await uploadProfilePhoto(user, profilePhoto);
+        } catch (error) {
+          console.error('Photo upload error:', error);
+          Alert.alert('Upload Error', error.message || 'Failed to upload profile photo');
           return;
         }
-
-        const { data: publicUrlData } = supabase.storage
-          .from('profile_photos')
-          .getPublicUrl(fileName);
-
-        profile_photo_url = publicUrlData.publicUrl;
-      }
-
-      // Upload identity document if selected
-      if (identityDoc) {
-        const ext = identityDoc.name.split('.').pop();
-        const fileName = `identity_${user.id}_${Date.now()}.${ext}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('identity_docs')
-          .upload(fileName, {
-            uri: identityDoc.uri,
-            type: identityDoc.mimeType || 'application/octet-stream',
-            name: identityDoc.name,
-          });
-
-        if (uploadError) {
-          console.error('Upload error:', uploadError);
-          Alert.alert('Upload Error', 'Failed to upload identity document');
-          return;
-        }
-
-        const { data: publicUrl } = supabase.storage
-          .from('identity_docs')
-          .getPublicUrl(fileName);
-        identity_url = publicUrl.publicUrl;
       }
 
       const updates = {
@@ -521,7 +447,6 @@ export default function ProfileScreen() {
         id: user.id,
         latitude: profile.latitude ? parseFloat(profile.latitude) : null,
         longitude: profile.longitude ? parseFloat(profile.longitude) : null,
-        identity_url,
         profile_photo_url,
         updated_at: new Date().toISOString(),
         allergies: allergies.split(',').map(a => a.trim().toLowerCase()).filter(a => a.length > 0),
@@ -533,32 +458,18 @@ export default function ProfileScreen() {
         console.error('Save error:', error);
         Alert.alert('Error', `Failed to update profile: ${error.message}`);
       } else {
-        Alert.alert(
-          'Success', 
-          'Profile updated successfully!',
-          [
-            {
-              text: 'Stay Here',
-              style: 'cancel',
-            },
-            {
-              text: 'Go to Home',
-              onPress: () => navigation.navigate('Home'),
-            },
-          ]
-        );
+        Alert.alert('Success', 'Profile updated successfully!');
       }
     } catch (error) {
       console.error('Save profile error:', error);
       Alert.alert('Error', 'An unexpected error occurred while saving');
-      throw error;
     }
   };
 
   const pickDocument = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({ 
-        type: '*/*',
+        type: ['application/pdf', 'image/*'],
         copyToCacheDirectory: true,
       });
       
@@ -679,441 +590,659 @@ export default function ProfileScreen() {
     );
   };
 
+  const onDateChange = (event, selectedDate) => {
+    setShowDatePicker(false);
+    if (selectedDate) {
+      setDateOfBirth(selectedDate);
+      setProfile({
+        ...profile,
+        date_of_birth: selectedDate.toISOString().split('T')[0]
+      });
+    }
+  };
+
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#00A86B" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
+      <View style={[styles.centered, { backgroundColor: theme.background }]}>
+        <ActivityIndicator size="large" color={theme.addButton} />
+        <Text style={[styles.loadingText, { color: theme.text }]}>Loading profile...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>👤 Profile Settings</Text>
+    <View style={[styles.screenContainer, { backgroundColor: theme.background }]}>
+      <ScrollView 
+        contentContainerStyle={styles.scrollContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header Section */}
+        <View style={[styles.header, { backgroundColor: theme.tabBar, borderBottomColor: theme.tabBarInactive }]}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: theme.text }]}>Profile</Text>
+          <View style={styles.headerRight} />
+        </View>
 
-      <Text style={styles.stats}>
-        ♻️ You've saved {wasteSavedCount} item(s) from waste!
-      </Text>
-
-      {/* Profile Photo Section */}
-      <View style={styles.photoSection}>
-        <Text style={styles.sectionTitle}>📸 Profile Photo</Text>
-        
-        <TouchableOpacity
-          style={styles.photoContainer}
-          onPress={selectProfilePhoto}
-        >
-          {profilePhoto || profile.profile_photo_url ? (
-            <Image
-              source={{ uri: profilePhoto?.uri || profile.profile_photo_url }}
-              style={styles.profilePhoto}
-            />
-          ) : (
-            <View style={styles.defaultAvatar}>
-              <Text style={styles.avatarText}>{getDefaultAvatar()}</Text>
-            </View>
-          )}
-          <View style={styles.photoOverlay}>
-            <Text style={styles.photoOverlayText}>📷</Text>
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.photoButtons}>
+        {/* Theme Toggle Button */}
+        <View style={{ alignItems: 'center', marginVertical: 10 }}>
           <TouchableOpacity
-            style={[styles.button, styles.photoButton]}
-            onPress={selectProfilePhoto}
+            onPress={toggleTheme}
+            style={{
+              backgroundColor: theme.addButton,
+              paddingVertical: 8,
+              paddingHorizontal: 20,
+              borderRadius: 20,
+            }}
           >
-            <Text style={styles.buttonText}>
-              {profilePhoto || profile.profile_photo_url ? 'Change Photo' : 'Add Photo'}
+            <Text style={{ color: '#fff', fontWeight: '600' }}>
+              Switch to {themeName === 'light' ? 'Dark' : 'Light'} Mode
             </Text>
           </TouchableOpacity>
-          
-          {(profilePhoto || profile.profile_photo_url) && (
-            <TouchableOpacity
-              style={[styles.button, styles.removePhotoButton]}
-              onPress={removeProfilePhoto}
-            >
-              <Text style={styles.buttonText}>Remove</Text>
-            </TouchableOpacity>
-          )}
         </View>
-      </View>
 
-      <Text style={styles.sectionTitle}>📝 Personal Information</Text>
+        {/* Profile Card */}
+        <View style={[styles.profileCard, { backgroundColor: theme.tabBar, shadowColor: theme.text }]}>
+          <TouchableOpacity onPress={selectProfilePhoto} style={styles.avatarContainer}>
+            {profilePhoto?.uri || profile.profile_photo_url ? (
+              <Image
+                source={{ uri: profilePhoto?.uri || profile.profile_photo_url }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={[styles.defaultAvatar, { backgroundColor: theme.addButton }]}>
+                <Text style={styles.avatarText}>{getDefaultAvatar()}</Text>
+              </View>
+            )}
+            <View style={[styles.cameraIcon, { backgroundColor: theme.addButton }]}>
+              <Ionicons name="camera" size={16} color="#fff" />
+            </View>
+          </TouchableOpacity>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Full Name *"
-        value={profile.name}
-        onChangeText={(val) => setProfile({ ...profile, name: val })}
-      />
-
-      <TextInput
-        style={styles.input}
-        placeholder="Surname *"
-        value={profile.surname}
-        onChangeText={(val) => setProfile({ ...profile, surname: val })}
-      />
-
-      <TextInput
-        style={[styles.input, styles.disabledInput]}
-        placeholder="Email (read-only)"
-        value={profile.email}
-        editable={false}
-      />
-
-      {profile.email ? (
-        <View style={styles.verificationContainer}>
-          <Text style={[
-            styles.verificationText,
-            isEmailVerified ? styles.verified : styles.notVerified
-          ]}>
-            {isEmailVerified ? '✅ Email Verified' : '❌ Email Not Verified'}
-          </Text>
+          <Text style={[styles.userName, { color: theme.text }]}>{profile.name} {profile.surname}</Text>
+          <Text style={[styles.userEmail, { color: theme.tabBarInactive }]}>{profile.email}</Text>
           
-          {!isEmailVerified && (
+          <View style={[styles.verificationBadge, { backgroundColor: themeName === 'light' ? '#E8F5E9' : '#222' }]}>
+            <Ionicons 
+              name={isEmailVerified ? "checkmark-circle" : "close-circle"} 
+              size={16} 
+              color={isEmailVerified ? "#4CAF50" : "#F44336"} 
+            />
+            <Text style={[styles.verificationText, { color: isEmailVerified ? "#4CAF50" : "#F44336" }]}>
+              {isEmailVerified ? 'Verified' : 'Not Verified'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Stats Card */}
+        <View style={[styles.statsCard, { backgroundColor: theme.tabBar, shadowColor: theme.text }]}>
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: theme.addButton }]}>{wasteSavedCount}</Text>
+            <Text style={[styles.statLabel, { color: theme.tabBarInactive }]}>Items Saved</Text>
+          </View>
+          <View style={styles.statSeparator} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: theme.addButton }]}>4.5</Text>
+            <Text style={[styles.statLabel, { color: theme.tabBarInactive }]}>Rating</Text>
+          </View>
+          <View style={styles.statSeparator} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { color: theme.addButton }]}>45</Text>
+            <Text style={[styles.statLabel, { color: theme.tabBarInactive }]}>Orders</Text>
+          </View>
+        </View>
+
+        {/* Personal Information Section */}
+        <View style={[styles.section, { backgroundColor: theme.tabBar, shadowColor: theme.text }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Personal Information</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>Full Name</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+              placeholder="Enter your full name"
+              placeholderTextColor={theme.tabBarInactive}
+              value={profile.name}
+              onChangeText={(val) => setProfile({ ...profile, name: val })}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>Surname</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+              placeholder="Enter your surname"
+              placeholderTextColor={theme.tabBarInactive}
+              value={profile.surname}
+              onChangeText={(val) => setProfile({ ...profile, surname: val })}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>Email</Text>
+            <TextInput
+              style={[styles.input, styles.disabledInput, { backgroundColor: theme.background, color: theme.tabBarInactive, borderColor: theme.tabBarInactive }]}
+              placeholder="Your email"
+              placeholderTextColor={theme.tabBarInactive}
+              value={profile.email}
+              editable={false}
+            />
+            {!isEmailVerified && (
+              <TouchableOpacity 
+                style={[styles.verifyButton, { backgroundColor: theme.addButton }]} 
+                onPress={sendVerificationEmail}
+                disabled={verificationLoading || verificationSent}
+              >
+                <Text style={styles.verifyButtonText}>
+                  {verificationLoading ? 'Sending...' : verificationSent ? 'Sent!' : 'Verify Email'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>Phone Number</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+              placeholder="+CountryCode Number"
+              placeholderTextColor={theme.tabBarInactive}
+              value={profile.phone_number}
+              onChangeText={handlePhoneNumberChange}
+              keyboardType="phone-pad"
+              maxLength={15}
+            />
+            <Text style={[styles.helperText, { color: theme.tabBarInactive }]}>Include country code (e.g., +905551234567)</Text>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>Date of Birth</Text>
             <TouchableOpacity
-              style={[styles.button, styles.verifyButton]}
-              onPress={sendVerificationEmail}
-              disabled={verificationLoading || verificationSent}
+              style={[styles.input, { backgroundColor: theme.background, borderColor: theme.tabBarInactive }]}
+              onPress={() => setShowDatePicker(true)}
             >
-              <Text style={styles.buttonText}>
-                {verificationLoading 
-                  ? 'Sending...' 
-                  : verificationSent 
-                    ? 'Email Sent!' 
-                    : 'Verify Email'}
+              <Text style={profile.date_of_birth ? [styles.inputText, { color: theme.text }] : [styles.placeholderText, { color: theme.tabBarInactive }]}>
+                {profile.date_of_birth || 'Select your date of birth'}
               </Text>
             </TouchableOpacity>
-          )}
+            {showDatePicker && (
+              <DateTimePicker
+                value={dateOfBirth}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={onDateChange}
+                maximumDate={new Date()}
+              />
+            )}
+          </View>
         </View>
-      ) : null}
 
-      <TextInput
-        style={styles.input}
-        placeholder="Phone Number (+CountryCode)"
-        value={profile.phone_number}
-        onChangeText={handlePhoneNumberChange}
-        keyboardType="phone-pad"
-        maxLength={15}
-      />
-      
-      <Text style={styles.helperText}>
-        Format: +905551234567 (include country code)
-      </Text>
+        {/* Location Section */}
+        <View style={[styles.section, { backgroundColor: theme.tabBar, shadowColor: theme.text }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Location Information</Text>
+          
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>City</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+              placeholder="Enter your city"
+              placeholderTextColor={theme.tabBarInactive}
+              value={profile.city}
+              onChangeText={(val) => setProfile({ ...profile, city: val })}
+            />
+          </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Date of Birth (YYYY-MM-DD)"
-        value={profile.date_of_birth}
-        onChangeText={(val) => setProfile({ ...profile, date_of_birth: val })}
-      />
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>Address</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+              placeholder="Enter your address"
+              placeholderTextColor={theme.tabBarInactive}
+              value={profile.address}
+              onChangeText={(val) => setProfile({ ...profile, address: val })}
+            />
+          </View>
 
-      <Text style={styles.sectionTitle}>🆔 Identity Verification</Text>
+          <View style={styles.coordinatesRow}>
+            <View style={[styles.inputGroup, { flex: 1, marginRight: 10 }]}>
+              <Text style={[styles.inputLabel, { color: theme.text }]}>Latitude</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+                placeholder="Latitude"
+                placeholderTextColor={theme.tabBarInactive}
+                keyboardType="numeric"
+                value={profile.latitude}
+                onChangeText={(val) => setProfile({ ...profile, latitude: val })}
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={[styles.inputLabel, { color: theme.text }]}>Longitude</Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+                placeholder="Longitude"
+                placeholderTextColor={theme.tabBarInactive}
+                keyboardType="numeric"
+                value={profile.longitude}
+                onChangeText={(val) => setProfile({ ...profile, longitude: val })}
+              />
+            </View>
+          </View>
 
-      <TouchableOpacity
-        style={[styles.button, styles.documentButton]}
-        onPress={pickDocument}
-      >
-        <Text style={styles.buttonText}>
-          {identityDoc ? '✅ Identity Document Selected' : '📎 Upload Identity Document'}
-        </Text>
-      </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.locationButton, { backgroundColor: theme.addButton }]}
+            onPress={fetchCurrentLocation}
+            disabled={locationLoading}
+          >
+            <Ionicons name="location" size={20} color="#fff" />
+            <Text style={styles.locationButtonText}>
+              {locationLoading ? 'Getting Location...' : 'Use Current Location'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      {identityDoc && (
-        <Text style={styles.selectedDocText}>
-          Selected: {identityDoc.name}
-        </Text>
-      )}
+        {/* Preferences Section */}
+        <View style={[styles.section, { backgroundColor: theme.tabBar, shadowColor: theme.text }]}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Preferences</Text>
+          
+          <View style={styles.preferenceItem}>
+            <View>
+              <Text style={[styles.preferenceLabel, { color: theme.text }]}>Sharing Enabled</Text>
+              <Text style={[styles.preferenceDescription, { color: theme.tabBarInactive }]}>Allow sharing your items with others</Text>
+            </View>
+            <Switch
+              value={profile.is_sharing}
+              onValueChange={(val) => setProfile({ ...profile, is_sharing: val })}
+              trackColor={{ false: '#E0E0E0', true: '#43d9b4' }}
+              thumbColor={profile.is_sharing ? theme.addButton : '#f4f3f4'}
+            />
+          </View>
 
-      <Text style={styles.sectionTitle}>📍 Location Information</Text>
+          <View style={styles.preferenceItem}>
+            <View>
+              <Text style={[styles.preferenceLabel, { color: theme.text }]}>Expiry Alerts</Text>
+              <Text style={[styles.preferenceDescription, { color: theme.tabBarInactive }]}>Get notifications for expiring items</Text>
+            </View>
+            <Switch
+              value={profile.expiry_alerts_enabled}
+              onValueChange={(val) => setProfile({ ...profile, expiry_alerts_enabled: val })}
+              trackColor={{ false: '#E0E0E0', true: '#43d9b4' }}
+              thumbColor={profile.expiry_alerts_enabled ? theme.addButton : '#f4f3f4'}
+            />
+          </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="City"
-        value={profile.city}
-        onChangeText={(val) => setProfile({ ...profile, city: val })}
-      />
+          <View style={styles.preferenceItem}>
+            <View>
+              <Text style={[styles.preferenceLabel, { color: theme.text }]}>Recipe Suggestions</Text>
+              <Text style={[styles.preferenceDescription, { color: theme.tabBarInactive }]}>Get personalized recipe recommendations</Text>
+            </View>
+            <Switch
+              value={profile.recipe_suggestions_enabled}
+              onValueChange={(val) => setProfile({ ...profile, recipe_suggestions_enabled: val })}
+              trackColor={{ false: '#E0E0E0', true: '#43d9b4' }}
+              thumbColor={profile.recipe_suggestions_enabled ? theme.addButton : '#f4f3f4'}
+            />
+          </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Address"
-        value={profile.address}
-        onChangeText={(val) => setProfile({ ...profile, address: val })}
-      />
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: theme.text }]}>Allergies</Text>
+            <TextInput
+              style={[styles.input, { height: 80, textAlignVertical: 'top', backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+              value={allergies}
+              onChangeText={setAllergies}
+              placeholder="List your allergies (comma separated)"
+              placeholderTextColor={theme.tabBarInactive}
+              multiline={true}
+            />
+          </View>
+        </View>
 
-      <View style={styles.coordinatesContainer}>
-        <TextInput
-          style={[styles.input, styles.coordinateInput]}
-          placeholder="Latitude"
-          keyboardType="numeric"
-          value={profile.latitude}
-          onChangeText={(val) => setProfile({ ...profile, latitude: val })}
-        />
-        <TextInput
-          style={[styles.input, styles.coordinateInput]}
-          placeholder="Longitude"
-          keyboardType="numeric"
-          value={profile.longitude}
-          onChangeText={(val) => setProfile({ ...profile, longitude: val })}
-        />
-      </View>
+        {/* Action Buttons */}
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: theme.addButton }]}
+            onPress={saveProfile}
+            disabled={saving}
+          >
+            <Text style={styles.primaryButtonText}>
+              {saving ? 'Saving...' : 'Save Profile'}
+            </Text>
+          </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[styles.button, styles.locationButton]}
-        onPress={fetchCurrentLocation}
-        disabled={locationLoading}
-      >
-        <Text style={styles.buttonText}>
-          {locationLoading ? '📍 Getting Location...' : '📍 Use My Current Location'}
-        </Text>
-      </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={resetPassword}
+          >
+            <Text style={styles.secondaryButtonText}>Reset Password</Text>
+          </TouchableOpacity>
 
-<Text style={styles.sectionTitle}>🍽️ Dietary Information</Text>
+          <TouchableOpacity
+            style={[styles.chatButton, { borderColor: theme.addButton }]}
+            onPress={() => navigation.navigate('Chat', { 
+              chatType: 'general', 
+              title: 'Community Chat' 
+            })}
+          >
+            <Ionicons name="chatbubbles" size={20} color={theme.addButton} />
+            <Text style={[styles.chatButtonText, { color: theme.addButton }]}>Community Chat</Text>
+          </TouchableOpacity>
 
-<Text style={styles.label}>Allergies (comma separated)</Text>
-<TextInput
-  style={styles.input}
-  value={allergies}
-  onChangeText={setAllergies}
-  placeholder="e.g. peanuts, shellfish, dairy"
-  multiline={true}
-  numberOfLines={2}
-/>
-
-<Text style={styles.sectionTitle}>⚙️ Settings</Text>
-
-<View style={styles.switchContainer}>
-  <Text style={styles.switchLabel}>Sharing Enabled:</Text>
-  <Switch
-    value={profile.is_sharing}
-    onValueChange={(val) => setProfile({ ...profile, is_sharing: val })}
-    trackColor={{ false: '#767577', true: '#00A86B' }}
-    thumbColor={profile.is_sharing ? '#fff' : '#f4f3f4'}
-  />
-</View>
-
-<Text style={styles.sectionTitle}>🔔 Notification Preferences</Text>
-
-<View style={styles.switchContainer}>
-  <Text style={styles.switchLabel}>Expiry Alerts:</Text>
-  <Switch
-    value={profile.expiry_alerts_enabled}
-    onValueChange={(val) => setProfile({ ...profile, expiry_alerts_enabled: val })}
-    trackColor={{ false: '#767577', true: '#00A86B' }}
-    thumbColor={profile.expiry_alerts_enabled ? '#fff' : '#f4f3f4'}
-  />
-</View>
-
-<View style={styles.switchContainer}>
-  <Text style={styles.switchLabel}>Recipe Suggestions:</Text>
-  <Switch
-    value={profile.recipe_suggestions_enabled}
-    onValueChange={(val) => setProfile({ ...profile, recipe_suggestions_enabled: val })}
-    trackColor={{ false: '#767577', true: '#00A86B' }}
-    thumbColor={profile.recipe_suggestions_enabled ? '#fff' : '#f4f3f4'}
-  />
-</View>
-
-<View style={styles.buttonContainer}>
-  <TouchableOpacity
-    style={[styles.button, styles.saveButton]}
-    onPress={saveProfile}
-    disabled={saving}
-  >
-    <Text style={styles.buttonText}>
-      {saving ? '💾 Saving...' : '💾 Save Profile'}
-    </Text>
-  </TouchableOpacity>
-
-  <TouchableOpacity
-    style={[styles.button, styles.resetButton]}
-    onPress={resetPassword}
-  >
-    <Text style={styles.buttonText}>🔒 Reset Password</Text>
-  </TouchableOpacity>
-
-  <TouchableOpacity
-    style={[styles.button, styles.chatButton]}
-    onPress={() => navigation.navigate('Chat', { 
-      chatType: 'general', 
-      title: 'Community Chat' 
-    })}
-  >
-    <Text style={styles.buttonText}>💬 Community Chat</Text>
-  </TouchableOpacity>
-
-  <TouchableOpacity
-    style={[styles.button, styles.logoutButton]}
-    onPress={handleLogout}
-  >
-    <Text style={styles.buttonText}>🚪 Logout</Text>
-  </TouchableOpacity>
-</View>
-</ScrollView>
+          <TouchableOpacity
+            style={[styles.logoutButton, { borderColor: '#F44336' }]}
+            onPress={handleLogout}
+          >
+            <Ionicons name="log-out" size={20} color="#F44336" />
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screenContainer: {
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+  },
+  scrollContainer: {
+    paddingBottom: 30,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 20,
-    paddingBottom: 40,
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
+  backButton: {
+    padding: 5,
   },
-  stats: {
-    fontSize: 16,
-    color: '#00A86B',
-    marginBottom: 20,
-    textAlign: 'center',
+  headerTitle: {
+    fontSize: 20,
     fontWeight: '600',
+    color: '#333',
+  },
+  headerRight: {
+    width: 24,
+  },
+  profileCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    margin: 20,
+    marginBottom: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginBottom: 15,
+  },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  defaultAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#4CAF50',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontSize: 40,
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  cameraIcon: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#00C897',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  userName: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 5,
+  },
+  userEmail: {
+    fontSize: 14,
+    color: '#757575',
+    marginBottom: 10,
+  },
+  verificationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 15,
+  },
+  verificationText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 5,
+  },
+  statsCard: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 15,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#757575',
+    marginTop: 5,
+  },
+  statSeparator: {
+    width: 1,
+    backgroundColor: '#E0E0E0',
+    marginVertical: 5,
+  },
+  section: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 24,
-    marginBottom: 12,
-    color: '#333',
-  },
-  label: {
-    fontSize: 16,
     fontWeight: '600',
+    color: '#333',
+    marginBottom: 15,
+  },
+  inputGroup: {
+    marginBottom: 15,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#616161',
     marginBottom: 8,
-    color: '#555',
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FAFAFA',
     borderRadius: 8,
     padding: 12,
-    borderColor: '#ddd',
     borderWidth: 1,
-    marginBottom: 12,
+    borderColor: '#E0E0E0',
     fontSize: 16,
+    color: '#333',
+  },
+  inputText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: '#9E9E9E',
   },
   disabledInput: {
-    backgroundColor: '#f5f5f5',
-    color: '#666',
+    backgroundColor: '#F5F5F5',
+    color: '#9E9E9E',
   },
   helperText: {
     fontSize: 12,
-    color: '#666',
-    marginTop: -8,
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
-  coordinatesContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  coordinateInput: {
-    flex: 1,
-    marginRight: 8,
-    marginBottom: 0,
-  },
-  selectedDocText: {
-    fontSize: 14,
-    color: '#00A86B',
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
-  verificationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  verificationText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  verified: {
-    color: '#00A86B',
-  },
-  notVerified: {
-    color: '#f44336',
+    color: '#9E9E9E',
+    marginTop: 5,
   },
   verifyButton: {
-    backgroundColor: '#FF9500',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    backgroundColor: '#00C897',
+    padding: 8,
     borderRadius: 6,
-    marginLeft: 10,
+    marginTop: 8,
+    alignSelf: 'flex-start',
   },
-  switchContainer: {
+  verifyButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  coordinatesRow: {
+    flexDirection: 'row',
+    marginBottom: 15,
+  },
+  locationButton: {
+    flexDirection: 'row',
+    backgroundColor: '#00C897',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locationButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  preferenceItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    borderColor: '#ddd',
-    borderWidth: 1,
-    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
   },
-  switchLabel: {
+  preferenceLabel: {
     fontSize: 16,
     color: '#333',
+    fontWeight: '500',
   },
-  buttonContainer: {
-    marginTop: 24,
+  preferenceDescription: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    marginTop: 2,
   },
-  button: {
+  actionsContainer: {
+    paddingHorizontal: 20,
+  },
+  primaryButton: {
+    backgroundColor: '#00C897',
     borderRadius: 8,
     padding: 16,
-    marginBottom: 12,
     alignItems: 'center',
+    marginBottom: 12,
   },
-  saveButton: {
-    backgroundColor: '#00A86B',
-  },
-  locationButton: {
-    backgroundColor: '#007AFF',
-  },
-  documentButton: {
-    backgroundColor: '#888',
-  },
-  resetButton: {
-    backgroundColor: '#FF9500',
-  },
-  chatButton: {
-    backgroundColor: '#007AFF',
-  },
-  logoutButton: {
-    backgroundColor: '#f44336',
-  },
-  buttonText: {
+  primaryButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  secondaryButton: {
+    backgroundColor: '#E0E0E0',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  secondaryButtonText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  chatButton: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#00C897',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  chatButtonText: {
+    color: '#00C897',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#F44336',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoutButtonText: {
+    color: '#F44336',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F5F5F5',
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
-    color: '#666',
+    color: '#757575',
   },
-    avatarContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  avatar: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#e0e0e0',
-    borderWidth: 2,
-    borderColor: '#ccc',
-  },
-
 });

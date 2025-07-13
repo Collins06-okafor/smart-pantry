@@ -1,80 +1,126 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
 export default function Login({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [secureEntry, setSecureEntry] = useState(true);
 
   const handleLogin = async () => {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) {
-    Alert.alert('Login Error', error.message);
-  } else {
-    const user = data.user;
-
-    // Fetch profile for the logged-in user
-    const { data: profile, error: profileError } = await supabase
-      .from('profile')
-      .select('city, address, latitude, longitude')
-      .eq('id', user.id)
-      .single();
-
-    if (profileError) {
-      console.error('Profile fetch error:', profileError);
-      Alert.alert('Error', 'Could not load user profile');
+    if (!email || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
       return;
     }
 
-    const hasLocation =
-      profile.city && profile.latitude !== null && profile.longitude !== null;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
+      if (error) throw error;
 
-    if (hasLocation) {
-      navigation.replace('MainTabs'); // go straight to dashboard
-    } else {
-      navigation.replace('Location'); // prompt for location
+      const user = data.user;
+      const { data: profile, error: profileError } = await supabase
+        .from('profile')
+        .select('city, address, latitude, longitude')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
+      const hasLocation = profile.city && profile.latitude !== null && profile.longitude !== null;
+      navigation.replace(hasLocation ? 'MainTabs' : 'Location');
+      
+    } catch (error) {
+      Alert.alert('Login Error', error.message || 'An error occurred during login');
+    } finally {
+      setLoading(false);
     }
-  }
-};
-
+  };
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
-      <Text style={styles.title}>Login</Text>
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      <StatusBar barStyle="light-content" backgroundColor="#1c1c1c" />
+      
+      {/* Header with Logo */}
+      <View style={styles.header}>
+        <Ionicons name="fast-food" size={50} color="#00C897" style={styles.logo} />
+        <Text style={styles.title}>Welcome Back</Text>
+        <Text style={styles.subtitle}>Login to access your Smart Pantry</Text>
+      </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor="#aaa"
-        keyboardType="email-address"
-        autoCapitalize="none"
-        value={email}
-        onChangeText={setEmail}
-      />
+      {/* Form */}
+      <View style={styles.formContainer}>
+        <View style={styles.inputContainer}>
+          <Ionicons name="mail-outline" size={20} color="#aaa" style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            placeholderTextColor="#aaa"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            value={email}
+            onChangeText={setEmail}
+          />
+        </View>
 
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor="#aaa"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
+        <View style={styles.inputContainer}>
+          <Ionicons name="lock-closed-outline" size={20} color="#aaa" style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor="#aaa"
+            secureTextEntry={secureEntry}
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity 
+            onPress={() => setSecureEntry(!secureEntry)}
+            style={styles.eyeIcon}
+          >
+            <Ionicons 
+              name={secureEntry ? 'eye-off-outline' : 'eye-outline'} 
+              size={20} 
+              color="#aaa" 
+            />
+          </TouchableOpacity>
+        </View>
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Login</Text>
-      </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, loading && styles.buttonDisabled]} 
+          onPress={handleLogin}
+          disabled={loading}
+        >
+          <Text style={styles.buttonText}>
+            {loading ? 'Logging in...' : 'Login'}
+          </Text>
+        </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
-        <Text style={styles.linkText}>Don't have an account? Sign up</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('ForgotPassword')}
+          style={styles.forgotPassword}
+        >
+          <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Footer */}
+      <View style={styles.footer}>
+        <Text style={styles.footerText}>Don't have an account?</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
+          <Text style={styles.footerLink}> Sign up</Text>
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -85,38 +131,87 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     justifyContent: 'center',
   },
+  header: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  logo: {
+    marginBottom: 15,
+  },
   title: {
-    fontSize: 32,
-    color: '#00C897',
+    fontSize: 28,
+    color: '#fff',
     fontWeight: 'bold',
-    marginBottom: 30,
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#aaa',
     textAlign: 'center',
   },
-  input: {
+  formContainer: {
+    marginBottom: 30,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#2e2e2e',
-    color: '#fff',
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: 20,
+    paddingHorizontal: 15,
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  input: {
+    flex: 1,
+    color: '#fff',
+    paddingVertical: 15,
     fontSize: 16,
+  },
+  eyeIcon: {
+    padding: 10,
   },
   button: {
     backgroundColor: '#00C897',
-    paddingVertical: 15,
-    borderRadius: 30,
+    paddingVertical: 16,
+    borderRadius: 10,
     alignItems: 'center',
-    marginBottom: 15,
+    marginTop: 10,
+    shadowColor: '#00C897',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   buttonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
   },
-  linkText: {
-    color: '#00C897',
-    textAlign: 'center',
+  forgotPassword: {
+    alignSelf: 'flex-end',
     marginTop: 10,
+  },
+  forgotPasswordText: {
+    color: '#aaa',
     fontSize: 14,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  footerText: {
+    color: '#aaa',
+    fontSize: 14,
+  },
+  footerLink: {
+    color: '#00C897',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });

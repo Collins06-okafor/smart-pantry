@@ -27,18 +27,27 @@ import NearbyUsersScreen from './screens/NearbyUsersScreen';
 import CameraScreen from './screens/CameraScreen';
 import RecipeDetailScreen from './screens/RecipeDetailScreen';
 
+// --- Add ThemeContext import ---
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 // Bottom Tabs UI
 function MainTabsStack() {
+  // --- Use theme from context ---
+  const { theme } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: '#00C897',
-        tabBarInactiveTintColor: '#999',
+        tabBarStyle: [
+          styles.tabBar,
+          { backgroundColor: theme.tabBar, borderTopColor: theme.tabBarInactive }
+        ],
+        tabBarActiveTintColor: theme.tabBarActive,
+        tabBarInactiveTintColor: theme.tabBarInactive,
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
@@ -67,7 +76,10 @@ function MainTabsStack() {
         component={AddItemScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <View style={[styles.addButton, focused && styles.addButtonFocused]}>
+            <View style={[
+              styles.addButton,
+              { backgroundColor: focused ? theme.addButtonFocused : theme.addButton }
+            ]}>
               <PlusCircle size={28} color="#fff" />
             </View>
           ),
@@ -104,28 +116,30 @@ export default function App() {
     console.log('Using JS engine:', global.HermesInternal ? 'Hermes' : 'JSC');
   }, []);
 
+  // --- Wrap app in ThemeProvider ---
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="Landing">
-        <Stack.Screen name="Landing" component={LandingPage} options={{ headerShown: false }} />
-        <Stack.Screen name="Login" component={Login} options={{ headerShown: false }} />
-        <Stack.Screen name="Signup" component={Signup} options={{ headerShown: false }} />
-        <Stack.Screen name="Location" component={LocationScreen} options={{ title: 'Share Location' }} />
-        <Stack.Screen name="MainTabs" component={MainTabsStack} options={{ headerShown: false }} />
-        <Stack.Screen name="Share" component={ShareScreen} options={{ title: 'Share Food' }} />
-        <Stack.Screen name="RequestFood" component={RequestFoodScreen} options={{ title: 'Request Food' }} />
-        <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Chat' }} />
-        <Stack.Screen name="AddItem" component={AddItemScreen} />
-        <Stack.Screen name="DiscardedItems" component={DiscardedItemsScreen} />
-        <Stack.Screen name="WasteStats" component={WasteStatsScreen} options={{ title: 'Waste Stats' }} />
-        <Stack.Screen name="ExpiringItems" component={ExpiringItemsScreen} />
-        <Stack.Screen name="NearbyUsers" component={NearbyUsersScreen} options={{ title: 'Nearby Users' }} />
-        <Stack.Screen name="Pantry" component={PantryScreen} />
-        <Stack.Screen name="Camera" component={CameraScreen} options={{ headerShown: false, presentation: 'modal' }} />
-        <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
-
-      </Stack.Navigator>
-    </NavigationContainer>
+    <ThemeProvider>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName="Landing">
+          <Stack.Screen name="Landing" component={LandingPage} options={{ headerShown: false }} />
+          <Stack.Screen name="Login" component={Login} options={{ headerShown: false }} />
+          <Stack.Screen name="Signup" component={Signup} options={{ headerShown: false }} />
+          <Stack.Screen name="Location" component={LocationScreen} options={{ title: 'Share Location' }} />
+          <Stack.Screen name="MainTabs" component={MainTabsStack} options={{ headerShown: false }} />
+          <Stack.Screen name="Share" component={ShareScreen} options={{ title: 'Share Food' }} />
+          <Stack.Screen name="RequestFood" component={RequestFoodScreen} options={{ title: 'Request Food' }} />
+          <Stack.Screen name="Chat" component={ChatScreen} options={{ title: 'Chat' }} />
+          <Stack.Screen name="AddItem" component={AddItemScreen} />
+          <Stack.Screen name="DiscardedItems" component={DiscardedItemsScreen} />
+          <Stack.Screen name="WasteStats" component={WasteStatsScreen} options={{ title: 'Waste Stats' }} />
+          <Stack.Screen name="ExpiringItems" component={ExpiringItemsScreen} />
+          <Stack.Screen name="NearbyUsers" component={NearbyUsersScreen} options={{ title: 'Nearby Users' }} />
+          <Stack.Screen name="Pantry" component={PantryScreen} />
+          <Stack.Screen name="Camera" component={CameraScreen} options={{ headerShown: false, presentation: 'modal' }} />
+          <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </ThemeProvider>
   );
 }
 

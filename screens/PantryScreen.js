@@ -358,79 +358,79 @@ export default function PantryScreen({ navigation }) {
   };
 
   const renderGridItem = ({ item, index }) => {
-    const expirationStatus = getExpirationStatus(item.expiration_date);
-    const isExpired = expirationStatus.status === 'expired';
-    const isExpiring = expirationStatus.status === 'expiring';
-    const emoji = getItemEmoji(item.item_name);
+  const expirationStatus = getExpirationStatus(item.expiration_date);
+  const isExpired = expirationStatus.status === 'expired';
+  const isExpiring = expirationStatus.status === 'expiring';
+  const emoji = getItemEmoji(item.item_name);
 
-    return (
-      <TouchableOpacity 
-        style={[
-          styles.gridItem,
-          isExpired && styles.gridItemExpired,
-          isExpiring && styles.gridItemExpiring
-        ]}
-        onPress={() => handleEdit(item)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.gridItemContent}>
-          <View style={styles.itemHeader}>
-            <Text style={styles.itemEmoji}>{emoji}</Text>
-            <View style={styles.itemActions}>
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => handleShare(item)}
-              >
-                <Text style={styles.actionEmoji}>📤</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.discardButton]}
-                onPress={() => handleDiscard(item)}
-              >
-                <Text style={styles.actionEmoji}>♻️</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.actionButton, { marginLeft: 4 }]}
-                onPress={() => handleDelete(item)}
-              >
-                <Text style={styles.actionEmoji}>🗑️</Text>
-              </TouchableOpacity>
-            </View>
+  return (
+    <TouchableOpacity 
+      style={[
+        styles.gridItem,
+        isExpired && styles.gridItemExpired,
+        isExpiring && styles.gridItemExpiring
+      ]}
+      onPress={() => handleEdit(item)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.gridItemContent}>
+        <View style={styles.itemHeader}>
+          <Text style={styles.itemEmoji}>{emoji}</Text>
+          <View style={styles.itemActions}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => handleShare(item)}
+            >
+              <Text style={styles.actionEmoji}>📤</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.discardButton]}
+              onPress={() => handleDiscard(item)}
+            >
+              <Text style={styles.actionEmoji}>♻️</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, { marginLeft: 4 }]}
+              onPress={() => handleDelete(item)}
+            >
+              <Text style={styles.actionEmoji}>🗑️</Text>
+            </TouchableOpacity>
           </View>
-          
-          <Text style={styles.itemName} numberOfLines={2}>
-            {item.item_name}
-          </Text>
-          
-          <View style={styles.itemDetails}>
-            <View style={styles.quantityContainer}>
-              <Text style={styles.quantityDot}>●</Text>
-              <Text style={styles.quantityText}>Qty {item.quantity}</Text>
-            </View>
-            <Text style={[
-              styles.expirationText,
-              isExpired && styles.expiredText,
-              isExpiring && styles.expiringText
-            ]}>
-              {formatDate(item.expiration_date)}
-            </Text>
-          </View>
-
-          {isExpired && (
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusText}>EXPIRED</Text>
-            </View>
-          )}
-          {isExpiring && (
-            <View style={[styles.statusBadge, styles.expiringBadge]}>
-              <Text style={styles.statusText}>EXPIRING</Text>
-            </View>
-          )}
         </View>
-      </TouchableOpacity>
-    );
-  };
+        
+        <Text style={styles.itemName} numberOfLines={2}>
+          {item.item_name}
+        </Text>
+        
+        <View style={styles.itemDetails}>
+          <View style={styles.quantityContainer}>
+            <Text style={styles.quantityDot}>●</Text>
+            <Text style={styles.quantityText}>Qty {item.quantity}</Text>
+          </View>
+          <Text style={[
+            styles.expirationText,
+            isExpired && styles.expiredText,
+            isExpiring && styles.expiringText
+          ]}>
+            {formatDate(item.expiration_date)}
+          </Text>
+        </View>
+
+        {/* Fixed the badge display logic */}
+        {isExpired && (
+          <View style={[styles.statusBadge, styles.expiredBadge]}>
+            <Text style={styles.statusText}>EXPIRED</Text>
+          </View>
+        )}
+        {isExpiring && !isExpired && (
+          <View style={[styles.statusBadge, styles.expiringBadge]}>
+            <Text style={styles.statusText}>EXPIRING</Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+};
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -795,8 +795,8 @@ const styles = StyleSheet.create({
   },
   gridItemExpired: {
     backgroundColor: '#ffebee',
-    borderWidth: 1,
-    borderColor: '#ef5350',
+    borderWidth: 2,
+    borderColor: '#f44336',
   },
   gridItemContent: {
     flex: 1,
@@ -865,11 +865,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   statusBadge: {
-    backgroundColor: '#f44336',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
     alignSelf: 'flex-start',
+  },
+  expiredBadge: {
+    backgroundColor: '#f44336',
   },
   expiringBadge: {
     backgroundColor: '#ff9800',
@@ -960,7 +962,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: '#666',
-       textAlign: 'center',
+    textAlign: 'center',
     marginBottom: 20,
   },
   addButton: {
