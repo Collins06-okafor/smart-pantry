@@ -22,7 +22,6 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
 
-
 const { width } = Dimensions.get('window');
 
 export default function ProfileScreen() {
@@ -59,6 +58,7 @@ export default function ProfileScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateOfBirth, setDateOfBirth] = useState(new Date());
 
+  // Phone number validation
   const validatePhoneNumber = (phoneNumber) => {
     const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
     
@@ -125,17 +125,41 @@ export default function ProfileScreen() {
     }
   };
 
+  // Profile photo handling
   const uploadProfilePhoto = async (user, photo) => {
     try {
       const fileName = `profile_${user.id}/${Date.now()}.jpg`;
       
-      const response = await fetch(photo.uri);
-      const blob = await response.blob();
+      let uploadData;
+      let contentType = 'image/jpeg';
+      
+      if (photo.uri.startsWith('file://')) {
+        const formData = new FormData();
+        formData.append('file', {
+          uri: photo.uri,
+          type: photo.type || 'image/jpeg',
+          name: fileName.split('/')[1]
+        });
+        uploadData = formData;
+      } else {
+        const response = await fetch(photo.uri);
+        const blob = await response.blob();
+        uploadData = blob;
+        contentType = blob.type || 'image/jpeg';
+      }
+
+      if (profile.profile_photo_url) {
+        const oldFileName = profile.profile_photo_url.split('/').pop();
+        const oldFilePath = `profile_${user.id}/${oldFileName}`;
+        await supabase.storage
+          .from('user-profile-photos')
+          .remove([oldFilePath]);
+      }
 
       const { data, error } = await supabase.storage
         .from('user-profile-photos')
-        .upload(fileName, blob, {
-          contentType: photo.type || 'image/jpeg',
+        .upload(fileName, uploadData, {
+          contentType: contentType,
           upsert: true,
           cacheControl: '3600'
         });
@@ -147,9 +171,10 @@ export default function ProfileScreen() {
         .getPublicUrl(fileName);
 
       return publicUrl;
+
     } catch (error) {
       console.error('Photo upload failed:', error);
-      throw new Error('Failed to upload profile photo');
+      throw new Error(`Failed to upload profile photo: ${error.message}`);
     }
   };
 
@@ -251,17 +276,13 @@ export default function ProfileScreen() {
     return initials || '👤';
   };
 
+  // Data loading
   const loadProfile = useCallback(async () => {
     try {
       setLoading(true);
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       
-      if (userError) {
-        console.error('User error:', userError);
-        Alert.alert('Error', 'Failed to get user information');
-        return;
-      }
-
+      if (userError) throw userError;
       if (!user) {
         Alert.alert('Error', 'No user found');
         return;
@@ -273,10 +294,9 @@ export default function ProfileScreen() {
         .eq('id', user.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') {
-        console.error('Fetch error:', error);
-        Alert.alert('Error', 'Failed to load profile');
-      } else if (data) {
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (data) {
         setProfile({
           ...data,
           latitude: data.latitude?.toString() || '',
@@ -304,7 +324,7 @@ export default function ProfileScreen() {
       }
     } catch (error) {
       console.error('Load profile error:', error);
-      Alert.alert('Error', 'An unexpected error occurred');
+      Alert.alert('Error', 'Failed to load profile data');
     } finally {
       setLoading(false);
     }
@@ -313,7 +333,6 @@ export default function ProfileScreen() {
   const fetchWasteStats = useCallback(async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      
       if (!user) return;
 
       const { data, error } = await supabase
@@ -335,6 +354,7 @@ export default function ProfileScreen() {
     fetchWasteStats();
   }, [loadProfile, fetchWasteStats]);
 
+  // Email verification
   const sendVerificationEmail = async () => {
     try {
       setVerificationLoading(true);
@@ -344,24 +364,22 @@ export default function ProfileScreen() {
         email: profile.email,
       });
 
-      if (error) {
-        console.error('Verification error:', error);
-        Alert.alert('Error', error.message);
-      } else {
-        setVerificationSent(true);
-        Alert.alert(
-          'Verification Email Sent',
-          'Please check your email inbox (and spam folder) for the verification link.'
-        );
-      }
+      if (error) throw error;
+
+      setVerificationSent(true);
+      Alert.alert(
+        'Verification Email Sent',
+        'Please check your email inbox (and spam folder) for the verification link.'
+      );
     } catch (error) {
       console.error('Verification error:', error);
-      Alert.alert('Error', 'Failed to send verification email');
+      Alert.alert('Error', error.message || 'Failed to send verification email');
     } finally {
       setVerificationLoading(false);
     }
   };
 
+  // Profile validation
   const validateProfile = () => {
     const errors = [];
     const { name, surname, email, phone_number } = profile;
@@ -387,6 +405,7 @@ export default function ProfileScreen() {
     return errors;
   };
 
+  // Profile saving
   const saveProfile = async () => {
     try {
       setSaving(true);
@@ -403,10 +422,7 @@ export default function ProfileScreen() {
           'Your email is not yet verified. Some features may be limited until you verify your email address.',
           [
             { text: 'Continue Anyway', onPress: () => continueSavingProfile() },
-            {
-              text: 'Send Verification',
-              onPress: sendVerificationEmail
-            }
+            { text: 'Send Verification', onPress: sendVerificationEmail }
           ]
         );
         return;
@@ -435,6 +451,7 @@ export default function ProfileScreen() {
       if (profilePhoto) {
         try {
           profile_photo_url = await uploadProfilePhoto(user, profilePhoto);
+          setProfilePhoto(null);
         } catch (error) {
           console.error('Photo upload error:', error);
           Alert.alert('Upload Error', error.message || 'Failed to upload profile photo');
@@ -454,35 +471,17 @@ export default function ProfileScreen() {
 
       const { error } = await supabase.from('profile').upsert(updates);
       
-      if (error) {
-        console.error('Save error:', error);
-        Alert.alert('Error', `Failed to update profile: ${error.message}`);
-      } else {
-        Alert.alert('Success', 'Profile updated successfully!');
-      }
+      if (error) throw error;
+
+      setProfile(prev => ({ ...prev, profile_photo_url }));
+      Alert.alert('Success', 'Profile updated successfully!');
     } catch (error) {
       console.error('Save profile error:', error);
-      Alert.alert('Error', 'An unexpected error occurred while saving');
+      Alert.alert('Error', error.message || 'Failed to update profile');
     }
   };
 
-  const pickDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({ 
-        type: ['application/pdf', 'image/*'],
-        copyToCacheDirectory: true,
-      });
-      
-      if (result.type === 'success') {
-        setIdentityDoc(result);
-        Alert.alert('Document Selected', `Selected: ${result.name}`);
-      }
-    } catch (error) {
-      console.error('Document picker error:', error);
-      Alert.alert('Error', 'Failed to select document');
-    }
-  };
-
+  // Location handling
   const fetchCurrentLocation = async () => {
     try {
       setLocationLoading(true);
@@ -515,6 +514,7 @@ export default function ProfileScreen() {
     }
   };
 
+  // Password reset
   const resetPassword = async () => {
     try {
       if (!profile.email) {
@@ -532,44 +532,39 @@ export default function ProfileScreen() {
         redirectTo: `${window.location.origin}/reset-password`,
       });
 
-      if (error) {
-        console.error('Password reset error:', error);
-        
-        switch (error.message) {
-          case 'For security purposes, you can only request this once every 60 seconds':
-            Alert.alert('Rate Limited', 'Please wait 60 seconds before requesting another password reset.');
-            break;
-          case 'User not found':
-            Alert.alert('Error', 'No account found with this email address.');
-            break;
-          case 'Email not confirmed':
-            Alert.alert('Error', 'Please confirm your email address first.');
-            break;
-          default:
-            Alert.alert('Error', `Failed to send reset email: ${error.message}`);
-        }
-      } else {
-        Alert.alert(
-          'Password Reset Email Sent', 
-          'Check your email inbox (and spam folder) for the password reset link. The link will expire in 1 hour.',
-          [{ text: 'OK' }]
-        );
-      }
+      if (error) throw error;
+
+      Alert.alert(
+        'Password Reset Email Sent', 
+        'Check your email inbox (and spam folder) for the password reset link. The link will expire in 1 hour.',
+        [{ text: 'OK' }]
+      );
     } catch (error) {
       console.error('Password reset error:', error);
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+      
+      switch (error.message) {
+        case 'For security purposes, you can only request this once every 60 seconds':
+          Alert.alert('Rate Limited', 'Please wait 60 seconds before requesting another password reset.');
+          break;
+        case 'User not found':
+          Alert.alert('Error', 'No account found with this email address.');
+          break;
+        case 'Email not confirmed':
+          Alert.alert('Error', 'Please confirm your email address first.');
+          break;
+        default:
+          Alert.alert('Error', error.message || 'Failed to send reset email');
+      }
     }
   };
 
+  // Logout
   const handleLogout = async () => {
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Logout',
           style: 'destructive',
@@ -590,6 +585,7 @@ export default function ProfileScreen() {
     );
   };
 
+  // Date picker
   const onDateChange = (event, selectedDate) => {
     setShowDatePicker(false);
     if (selectedDate) {
@@ -625,7 +621,7 @@ export default function ProfileScreen() {
           <View style={styles.headerRight} />
         </View>
 
-        {/* Theme Toggle Button */}
+        {/* Theme Toggle */}
         <View style={{ alignItems: 'center', marginVertical: 10 }}>
           <TouchableOpacity
             onPress={toggleTheme}
@@ -675,24 +671,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Stats Card */}
-        <View style={[styles.statsCard, { backgroundColor: theme.tabBar, shadowColor: theme.text }]}>
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: theme.addButton }]}>{wasteSavedCount}</Text>
-            <Text style={[styles.statLabel, { color: theme.tabBarInactive }]}>Items Saved</Text>
-          </View>
-          <View style={styles.statSeparator} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: theme.addButton }]}>4.5</Text>
-            <Text style={[styles.statLabel, { color: theme.tabBarInactive }]}>Rating</Text>
-          </View>
-          <View style={styles.statSeparator} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: theme.addButton }]}>45</Text>
-            <Text style={[styles.statLabel, { color: theme.tabBarInactive }]}>Orders</Text>
-          </View>
-        </View>
-
+       
         {/* Personal Information Section */}
         <View style={[styles.section, { backgroundColor: theme.tabBar, shadowColor: theme.text }]}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>Personal Information</Text>
@@ -886,7 +865,13 @@ export default function ProfileScreen() {
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: theme.text }]}>Allergies</Text>
             <TextInput
-              style={[styles.input, { height: 80, textAlignVertical: 'top', backgroundColor: theme.background, color: theme.text, borderColor: theme.tabBarInactive }]}
+              style={[styles.input, { 
+                height: 80, 
+                textAlignVertical: 'top', 
+                backgroundColor: theme.background, 
+                color: theme.text, 
+                borderColor: theme.tabBarInactive 
+              }]}
               value={allergies}
               onChangeText={setAllergies}
               placeholder="List your allergies (comma separated)"
@@ -942,7 +927,6 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   screenContainer: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
   },
   scrollContainer: {
     paddingBottom: 30,
@@ -953,296 +937,266 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     paddingTop: Platform.OS === 'ios' ? 50 : 20,
-    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
   },
   backButton: {
     padding: 5,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-  },
-  headerRight: {
-    width: 24,
-  },
-  profileCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    margin: 20,
-    marginBottom: 10,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  avatarContainer: {
-    position: 'relative',
-    marginBottom: 15,
-  },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
-  defaultAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 40,
-    color: 'white',
-    fontWeight: 'bold',
-  },
-  cameraIcon: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#00C897',
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  userName: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 5,
-  },
-  userEmail: {
-    fontSize: 14,
-    color: '#757575',
-    marginBottom: 10,
-  },
-  verificationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E8F5E9',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 15,
-  },
-  verificationText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginLeft: 5,
-  },
-  statsCard: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
-    marginHorizontal: 20,
-    marginBottom: 20,
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#757575',
-    marginTop: 5,
-  },
-  statSeparator: {
-    width: 1,
-    backgroundColor: '#E0E0E0',
-    marginVertical: 5,
-  },
-  section: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
-    marginHorizontal: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 15,
-  },
-  inputGroup: {
-    marginBottom: 15,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#616161',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#FAFAFA',
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    fontSize: 16,
-    color: '#333',
-  },
-  inputText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  placeholderText: {
-    fontSize: 16,
-    color: '#9E9E9E',
-  },
-  disabledInput: {
-    backgroundColor: '#F5F5F5',
-    color: '#9E9E9E',
-  },
-  helperText: {
-    fontSize: 12,
-    color: '#9E9E9E',
-    marginTop: 5,
-  },
-  verifyButton: {
-    backgroundColor: '#00C897',
-    padding: 8,
-    borderRadius: 6,
-    marginTop: 8,
-    alignSelf: 'flex-start',
-  },
-  verifyButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  coordinatesRow: {
-    flexDirection: 'row',
-    marginBottom: 15,
-  },
-  locationButton: {
-    flexDirection: 'row',
-    backgroundColor: '#00C897',
-    borderRadius: 8,
-    padding: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  locationButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  preferenceItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
-  },
-  preferenceLabel: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
-  },
-  preferenceDescription: {
-    fontSize: 12,
-    color: '#9E9E9E',
-    marginTop: 2,
-  },
-  actionsContainer: {
-    paddingHorizontal: 20,
-  },
-  primaryButton: {
-    backgroundColor: '#00C897',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    backgroundColor: '#E0E0E0',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  secondaryButtonText: {
-    color: '#333',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  chatButton: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#00C897',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  chatButtonText: {
-    color: '#00C897',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#F44336',
-    borderRadius: 8,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoutButtonText: {
-    color: '#F44336',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#757575',
-  },
+fontWeight: 'bold',
+textAlign: 'center',
+flex: 1,
+},
+headerRight: {
+width: 24,
+},
+centered: {
+flex: 1,
+justifyContent: 'center',
+alignItems: 'center',
+},
+loadingText: {
+marginTop: 10,
+fontSize: 16,
+},
+profileCard: {
+borderRadius: 15,
+padding: 20,
+marginHorizontal: 20,
+marginTop: 20,
+alignItems: 'center',
+shadowOffset: {
+width: 0,
+height: 2,
+},
+shadowOpacity: 0.1,
+shadowRadius: 4,
+elevation: 3,
+},
+avatarContainer: {
+position: 'relative',
+marginBottom: 15,
+},
+avatar: {
+width: 100,
+height: 100,
+borderRadius: 50,
+},
+defaultAvatar: {
+width: 100,
+height: 100,
+borderRadius: 50,
+justifyContent: 'center',
+alignItems: 'center',
+},
+avatarText: {
+fontSize: 40,
+},
+cameraIcon: {
+position: 'absolute',
+bottom: 0,
+right: 0,
+width: 30,
+height: 30,
+borderRadius: 15,
+justifyContent: 'center',
+alignItems: 'center',
+},
+userName: {
+fontSize: 22,
+fontWeight: 'bold',
+marginBottom: 5,
+},
+userEmail: {
+fontSize: 16,
+marginBottom: 10,
+},
+verificationBadge: {
+flexDirection: 'row',
+alignItems: 'center',
+paddingVertical: 5,
+paddingHorizontal: 10,
+borderRadius: 15,
+marginTop: 5,
+},
+verificationText: {
+marginLeft: 5,
+fontSize: 14,
+fontWeight: '500',
+},
+statsCard: {
+flexDirection: 'row',
+justifyContent: 'space-between',
+borderRadius: 15,
+padding: 20,
+marginHorizontal: 20,
+marginTop: 15,
+shadowOffset: {
+width: 0,
+height: 2,
+},
+shadowOpacity: 0.1,
+shadowRadius: 4,
+elevation: 3,
+},
+statItem: {
+alignItems: 'center',
+flex: 1,
+},
+statValue: {
+fontSize: 24,
+fontWeight: 'bold',
+},
+statLabel: {
+fontSize: 14,
+marginTop: 5,
+},
+statSeparator: {
+width: 1,
+backgroundColor: '#E0E0E0',
+},
+section: {
+borderRadius: 15,
+padding: 20,
+marginHorizontal: 20,
+marginTop: 15,
+shadowOffset: {
+width: 0,
+height: 2,
+},
+shadowOpacity: 0.1,
+shadowRadius: 4,
+elevation: 3,
+},
+sectionTitle: {
+fontSize: 18,
+fontWeight: 'bold',
+marginBottom: 15,
+},
+inputGroup: {
+marginBottom: 15,
+},
+inputLabel: {
+fontSize: 16,
+fontWeight: '500',
+marginBottom: 5,
+},
+input: {
+borderWidth: 1,
+borderRadius: 10,
+padding: 12,
+fontSize: 16,
+},
+disabledInput: {
+opacity: 0.7,
+},
+inputText: {
+fontSize: 16,
+},
+placeholderText: {
+fontSize: 16,
+},
+helperText: {
+fontSize: 12,
+marginTop: 5,
+},
+verifyButton: {
+padding: 10,
+borderRadius: 10,
+marginTop: 10,
+alignItems: 'center',
+},
+verifyButtonText: {
+color: '#fff',
+fontWeight: '600',
+},
+coordinatesRow: {
+flexDirection: 'row',
+justifyContent: 'space-between',
+},
+locationButton: {
+flexDirection: 'row',
+alignItems: 'center',
+justifyContent: 'center',
+padding: 12,
+borderRadius: 10,
+marginTop: 10,
+},
+locationButtonText: {
+color: '#fff',
+marginLeft: 10,
+fontWeight: '600',
+},
+preferenceItem: {
+flexDirection: 'row',
+justifyContent: 'space-between',
+alignItems: 'center',
+paddingVertical: 15,
+borderBottomWidth: 1,
+borderBottomColor: '#E0E0E0',
+},
+preferenceLabel: {
+fontSize: 16,
+fontWeight: '500',
+},
+preferenceDescription: {
+fontSize: 14,
+marginTop: 3,
+},
+actionsContainer: {
+marginHorizontal: 20,
+marginTop: 20,
+},
+primaryButton: {
+padding: 15,
+borderRadius: 10,
+alignItems: 'center',
+marginBottom: 10,
+},
+primaryButtonText: {
+color: '#fff',
+fontWeight: '600',
+fontSize: 16,
+},
+secondaryButton: {
+padding: 15,
+borderRadius: 10,
+alignItems: 'center',
+marginBottom: 10,
+borderWidth: 1,
+borderColor: '#E0E0E0',
+},
+secondaryButtonText: {
+fontWeight: '600',
+fontSize: 16,
+},
+chatButton: {
+flexDirection: 'row',
+alignItems: 'center',
+justifyContent: 'center',
+padding: 15,
+borderRadius: 10,
+marginBottom: 10,
+borderWidth: 1,
+},
+chatButtonText: {
+fontWeight: '600',
+fontSize: 16,
+marginLeft: 10,
+},
+logoutButton: {
+flexDirection: 'row',
+alignItems: 'center',
+justifyContent: 'center',
+padding: 15,
+borderRadius: 10,
+borderWidth: 1,
+},
+logoutButtonText: {
+color: '#F44336',
+fontWeight: '600',
+fontSize: 16,
+marginLeft: 10,
+},
 });

@@ -26,6 +26,7 @@ import ExpiringItemsScreen from './screens/ExpiringItemsScreen';
 import NearbyUsersScreen from './screens/NearbyUsersScreen';
 import CameraScreen from './screens/CameraScreen';
 import RecipeDetailScreen from './screens/RecipeDetailScreen';
+import FoodDetailsScreen from './screens/FoodDetailsScreen';
 
 // --- Add ThemeContext import ---
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -137,6 +138,7 @@ export default function App() {
           <Stack.Screen name="Pantry" component={PantryScreen} />
           <Stack.Screen name="Camera" component={CameraScreen} options={{ headerShown: false, presentation: 'modal' }} />
           <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
+          <Stack.Screen name="FoodDetails" component={FoodDetailsScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>

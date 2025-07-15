@@ -1,15 +1,25 @@
 // screens/RequestFoodScreen.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
 export default function RequestFoodScreen({ navigation, route }) {
   const [itemName, setItemName] = useState('');
-  const [notes, setNotes] = useState('');
+  const [description, setDescription] = useState('');
+  const [urgency, setUrgency] = useState('medium');
   const [loading, setLoading] = useState(false);
 
   const sharerId = route?.params?.sharerId;
+  const itemToRequest = route?.params?.item;
+
+  // Pre-fill fields if requesting a specific item
+  useEffect(() => {
+    if (itemToRequest) {
+      setItemName(itemToRequest.item_name);
+      setDescription(`I need ${itemToRequest.item_name} as offered by neighbor`);
+    }
+  }, [itemToRequest]);
 
   const handleSubmit = async () => {
     if (!itemName.trim()) {
@@ -26,22 +36,48 @@ export default function RequestFoodScreen({ navigation, route }) {
         return;
       }
 
-      const { error } = await supabase.from('food_requests').insert({
-        requester_id: user.id,
-        item_name: itemName.trim(),
-        notes: notes.trim(),
-      });
+      // Step 1: Create the food_request first
+      const { data: foodRequest, error: requestError } = await supabase
+        .from('food_requests')
+        .insert({
+          requester_id: user.id,
+          item_name: itemName,
+          notes: description,
+          description: description,
+          urgency: urgency,
+          status: 'active',
+          item_id: itemToRequest?.id || null,
+          related_sharer_id: sharerId || null,
+          related_item_id: itemToRequest?.id || null
+        })
+        .select('id')
+        .single();
 
-      if (error) throw error;
+      if (requestError) throw requestError;
 
-      Alert.alert('Request Sent', 'Your food request has been posted.');
+      // Step 2: Create the connection using the newly created food_request.id
+      const { data: connection, error: connectionError } = await supabase
+        .from('request_item_connections')
+        .insert({
+          request_id: foodRequest.id, // ✅ Now using the actual food_request.id
+          item_id: itemToRequest?.id || null,
+          requester_id: user.id,
+          item_name: itemName,
+          description: description,
+          urgency: urgency,
+          status: 'pending'
+        });
+
+      if (connectionError) throw connectionError;
+
+      Alert.alert('Request Sent', 'Your food request has been posted successfully!');
       setItemName('');
-      setNotes('');
+      setDescription('');
       navigation.goBack();
 
     } catch (err) {
       console.error('Error posting request:', err.message);
-      Alert.alert('Submission Failed', err.message || 'An error occurred');
+      Alert.alert('Submission Failed', err.message || 'An error occurred while submitting your request');
     } finally {
       setLoading(false);
     }
@@ -92,13 +128,37 @@ export default function RequestFoodScreen({ navigation, route }) {
         
         <TextInput
           style={[styles.input, styles.notesInput]}
-          placeholder="Any special notes? (optional)"
-          value={notes}
-          onChangeText={setNotes}
+          placeholder="Describe what you need (quantity, preferences, etc.)"
+          value={description}
+          onChangeText={setDescription}
           multiline
-          numberOfLines={3}
+          numberOfLines={4}
           placeholderTextColor="#999"
         />
+
+        <View style={styles.urgencyContainer}>
+          <Text style={styles.urgencyLabel}>Urgency:</Text>
+          <View style={styles.urgencyOptions}>
+            <TouchableOpacity
+              style={[styles.urgencyButton, urgency === 'high' && styles.urgencyButtonSelected]}
+              onPress={() => setUrgency('high')}
+            >
+              <Text style={urgency === 'high' ? styles.urgencyTextSelected : styles.urgencyText}>High</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.urgencyButton, urgency === 'medium' && styles.urgencyButtonSelected]}
+              onPress={() => setUrgency('medium')}
+            >
+              <Text style={urgency === 'medium' ? styles.urgencyTextSelected : styles.urgencyText}>Medium</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.urgencyButton, urgency === 'low' && styles.urgencyButtonSelected]}
+              onPress={() => setUrgency('low')}
+            >
+              <Text style={urgency === 'low' ? styles.urgencyTextSelected : styles.urgencyText}>Low</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         <TouchableOpacity
           style={[styles.submitButton, loading && { opacity: 0.7 }]}
@@ -111,11 +171,21 @@ export default function RequestFoodScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
+      {itemToRequest && (
+        <View style={styles.linkedItemCard}>
+          <Text style={styles.linkedItemTitle}>Requesting Help For:</Text>
+          <Text style={styles.linkedItemName}>{itemToRequest.item_name}</Text>
+          <Text style={styles.linkedItemDetail}>Quantity: {itemToRequest.quantity}</Text>
+          {itemToRequest.expiration_date && (
+            <Text style={styles.linkedItemDetail}>
+              Expires: {new Date(itemToRequest.expiration_date).toLocaleDateString()}
+            </Text>
+          )}
+        </View>
+      )}
+
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <TouchableOpacity>
-          <Text style={styles.viewAll}>View All</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
@@ -156,9 +226,10 @@ export default function RequestFoodScreen({ navigation, route }) {
         <Text style={styles.infoTitle}>How it works</Text>
         <Text style={styles.infoText}>
           1. Enter the food item you need {'\n'}
-          2. Add any special notes if needed {'\n'}
-          3. Submit your request {'\n'}
-          4. Neighbors will respond with offers
+          2. Describe your request in detail {'\n'}
+          3. Set urgency level {'\n'}
+          4. Submit your request {'\n'}
+          5. Neighbors will respond with offers
         </Text>
       </View>
     </ScrollView>
@@ -182,11 +253,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-  },
-  viewAll: {
-    fontSize: 14,
-    color: '#5a2ca0',
-    fontWeight: '600',
   },
   card: {
     backgroundColor: '#fff',
@@ -281,5 +347,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 22,
+  },
+  linkedItemCard: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#c8e6c9',
+  },
+  linkedItemTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    marginBottom: 8,
+  },
+  linkedItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
+  },
+  linkedItemDetail: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 4,
+  },
+  urgencyContainer: {
+    marginBottom: 15,
+  },
+  urgencyLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  urgencyOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  urgencyButton: {
+    flex: 1,
+    padding: 10,
+    marginHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+    alignItems: 'center',
+  },
+  urgencyButtonSelected: {
+    backgroundColor: '#5a2ca0',
+  },
+  urgencyText: {
+    color: '#666',
+    fontWeight: '500',
+  },
+  urgencyTextSelected: {
+    color: '#fff',
+    fontWeight: '500',
   },
 });

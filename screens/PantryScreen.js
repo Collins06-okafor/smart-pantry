@@ -17,13 +17,33 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   Dimensions,
-  ScrollView
+  ScrollView,
+  Image
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DiscardItemModal from './DiscardItemModal';
 import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
+
+// Food images mapping - replace with your actual image sources
+const image_url = {
+  'apple': require('../assets/images/apple.png'), // Replace with actual paths
+  'banana': require('../assets/images/banana.png'),
+  'bread': require('../assets/images/bread.png'),
+  'milk': require('../assets/images/milk.png'),
+  'eggs': require('../assets/images/eggs.png'),
+  'cheese': require('../assets/images/cheese.png'),
+  'tomato': require('../assets/images/tomato.png'),
+  'potato': require('../assets/images/potato.png'),
+  'carrot': require('../assets/images/carrot.png'),
+  'chicken': require('../assets/images/chicken.png'),
+  'fish': require('../assets/images/fish.png'),
+  'rice': require('../assets/images/rice.png'),
+  'pasta': require('../assets/images/pasta.png'),
+  'avocado': require('../assets/images/avocado.png'),
+  // Add more mappings as needed
+};
 
 export default function PantryScreen({ navigation }) {
   const [pantryItems, setPantryItems] = useState([]);
@@ -309,6 +329,13 @@ export default function PantryScreen({ navigation }) {
     setSelectedItemForShare(null);
   };
 
+ const navigateToFoodDetails = (item) => {
+  navigation.navigate('FoodDetails', { 
+    foodItem: item,
+    expirationStatus: getExpirationStatus(item.expiration_date)
+  });
+};
+
   const getExpirationStatus = (dateString) => {
     try {
       const expiration = new Date(dateString);
@@ -354,124 +381,119 @@ export default function PantryScreen({ navigation }) {
     if (name.includes('rice')) return '🍚';
     if (name.includes('pasta')) return '🍝';
     if (name.includes('flour')) return '🧂';
+    if (name.includes('avocado')) return '🥑';
+    if (name.includes('salad')) return '🥗';
+    if (name.includes('noodles')) return '🍜';
+    if (name.includes('toast')) return '🍞';
     return '🥫';
   };
 
+  const generateRandomFoodData = (item) => {
+    const prepTimes = ['15 min', '20 min', '30 min', '45 min', '60 min'];
+    const calories = ['150 kcal', '200 kcal', '245 kcal', '300 kcal', '350 kcal'];
+    const ratings = ['4.2', '4.5', '4.7', '4.8', '4.9'];
+    const distances = ['1.2 km', '2.5 km', '3.6 km', '4.1 km', '5.0 km'];
+    
+    return {
+      prep_time: prepTimes[Math.floor(Math.random() * prepTimes.length)],
+      calories: calories[Math.floor(Math.random() * calories.length)],
+      rating: ratings[Math.floor(Math.random() * ratings.length)],
+      distance: distances[Math.floor(Math.random() * distances.length)],
+      description: `Delicious ${item.item_name.toLowerCase()} prepared with fresh ingredients. Perfect for a healthy meal that's both nutritious and satisfying.`
+    };
+  };
+
   const renderGridItem = ({ item, index }) => {
-  const expirationStatus = getExpirationStatus(item.expiration_date);
-  const isExpired = expirationStatus.status === 'expired';
-  const isExpiring = expirationStatus.status === 'expiring';
-  const emoji = getItemEmoji(item.item_name);
+    const expirationStatus = getExpirationStatus(item.expiration_date);
+    const isExpired = expirationStatus.status === 'expired';
+    const isExpiring = expirationStatus.status === 'expiring';
+    
+    // Check if image exists for this item (case-insensitive)
+    const hasCustomImage = item.image_url && item.image_url.trim() !== '';
 
-  return (
-    <TouchableOpacity 
-      style={[
-        styles.gridItem,
-        isExpired && styles.gridItemExpired,
-        isExpiring && styles.gridItemExpiring
-      ]}
-      onPress={() => handleEdit(item)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.gridItemContent}>
-        <View style={styles.itemHeader}>
-          <Text style={styles.itemEmoji}>{emoji}</Text>
-          <View style={styles.itemActions}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => handleShare(item)}
-            >
-              <Text style={styles.actionEmoji}>📤</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.discardButton]}
-              onPress={() => handleDiscard(item)}
-            >
-              <Text style={styles.actionEmoji}>♻️</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, { marginLeft: 4 }]}
-              onPress={() => handleDelete(item)}
-            >
-              <Text style={styles.actionEmoji}>🗑️</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-        
-        <Text style={styles.itemName} numberOfLines={2}>
-          {item.item_name}
-        </Text>
-        
-        <View style={styles.itemDetails}>
-          <View style={styles.quantityContainer}>
-            <Text style={styles.quantityDot}>●</Text>
-            <Text style={styles.quantityText}>Qty {item.quantity}</Text>
-          </View>
-          <Text style={[
-            styles.expirationText,
-            isExpired && styles.expiredText,
-            isExpiring && styles.expiringText
-          ]}>
-            {formatDate(item.expiration_date)}
-          </Text>
-        </View>
+const itemKey = Object.keys(image_url).find(key => 
+  key.toLowerCase() === item.item_name.toLowerCase()
+);
+const hasDefaultImage = itemKey && image_url[itemKey];
 
-        {/* Fixed the badge display logic */}
-        {isExpired && (
-          <View style={[styles.statusBadge, styles.expiredBadge]}>
-            <Text style={styles.statusText}>EXPIRED</Text>
-          </View>
-        )}
-        {isExpiring && !isExpired && (
-          <View style={[styles.statusBadge, styles.expiringBadge]}>
-            <Text style={styles.statusText}>EXPIRING</Text>
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-};
-
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <View style={styles.searchContainer}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          style={styles.searchInput}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search items"
-          placeholderTextColor="#999"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity
-            style={styles.clearButton}
-            onPress={() => setSearchQuery('')}
-          >
-            <Text style={styles.clearButtonText}>✕</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-      
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Your Pantry</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('AddItem')}>
-          <Text style={styles.viewAllText}>Add Item</Text>
-        </TouchableOpacity>
-      </View>
+    
+    const foodData = generateRandomFoodData(item);
+    
+    return (
+      <TouchableOpacity 
+        style={[
+          styles.gridItem,
+          isExpired && styles.gridItemExpired,
+          isExpiring && styles.gridItemExpiring
+        ]}
+        onPress={() => navigateToFoodDetails({ ...item, ...foodData })}
+        activeOpacity={0.7}
+      >
+        <View style={styles.gridItemContent}>
+          {/* Food Image or Icon */}
+          <View style={styles.foodImageContainer}>
+  {hasCustomImage ? (
+    <Image 
+      source={{ uri: item.image_url }} 
+      style={styles.foodImage}
+      resizeMode="cover"
+    />
+  ) : hasDefaultImage ? (
+    <Image 
+      source={image_url[itemKey]} 
+      style={styles.foodImage}
+      resizeMode="cover"
+    />
+  ) : (
+    <View style={styles.iconContainer}>
+      <Text style={styles.foodIcon}>{getItemEmoji(item.item_name)}</Text>
     </View>
-  );
+  )}
+</View>
+
+          
+          {/* Food Name */}
+          <Text style={styles.itemName} numberOfLines={1}>
+            {item.item_name}
+          </Text>
+          
+          {/* Prep Time and Calories */}
+          <View style={styles.foodDetails}>
+            <Text style={styles.detailText}>{foodData.prep_time}</Text>
+            <Text style={styles.detailText}>{foodData.calories}</Text>
+          </View>
+          
+          {/* Rating */}
+          <View style={styles.ratingContainer}>
+            <Text style={styles.ratingText}>⭐ {foodData.rating}</Text>
+          </View>
+          
+          {/* Status Badge */}
+          {isExpired && (
+            <View style={[styles.statusBadge, styles.expiredBadge]}>
+              <Text style={styles.statusText}>EXPIRED</Text>
+            </View>
+          )}
+          {isExpiring && !isExpired && (
+            <View style={[styles.statusBadge, styles.expiringBadge]}>
+              <Text style={styles.statusText}>EXPIRING</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
-      <Text style={styles.emptyIcon}>🥫</Text>
-      <Text style={styles.emptyTitle}>Your pantry is empty</Text>
-      <Text style={styles.emptyText}>Start adding items to track your food inventory</Text>
+      <Text style={styles.emptyIcon}>🍽️</Text>
+      <Text style={styles.emptyTitle}>No dishes available</Text>
+      <Text style={styles.emptyText}>Start adding food items to see available dishes</Text>
       <TouchableOpacity
         style={styles.addButton}
         onPress={() => navigation.navigate('AddItem')}
       >
-        <Text style={styles.addButtonText}>+ Add First Item</Text>
+        <Text style={styles.addButtonText}>+ Add First Dish</Text>
       </TouchableOpacity>
     </View>
   );
@@ -479,41 +501,10 @@ export default function PantryScreen({ navigation }) {
   const renderNoResults = () => (
     <View style={styles.noResultsContainer}>
       <Text style={styles.noResultsIcon}>🔍</Text>
-      <Text style={styles.noResultsTitle}>No items found</Text>
+      <Text style={styles.noResultsTitle}>No dishes found</Text>
       <Text style={styles.noResultsText}>Try searching for something else</Text>
     </View>
   );
-
-  const renderAnalytics = () => {
-    if (discardStats.length === 0) return null;
-
-    const reasonCounts = discardStats.reduce((acc, item) => {
-      const reason = item.reason || 'No reason given';
-      acc[reason] = (acc[reason] || 0) + 1;
-      return acc;
-    }, {});
-
-    const topReason = Object.entries(reasonCounts)
-      .sort((a, b) => b[1] - a[1])[0];
-
-    return (
-      <View style={styles.analyticsCard}>
-        <Text style={styles.analyticsTitle}>♻️ Waste Insights</Text>
-        <View style={styles.analyticsContent}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{discardStats.length}</Text>
-            <Text style={styles.statLabel}>Items Discarded</Text>
-          </View>
-          {topReason && (
-            <View style={styles.statItem}>
-              <Text style={styles.statReason}>{topReason[0]}</Text>
-              <Text style={styles.statLabel}>Top Reason</Text>
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  };
 
   if (loading) {
     return (
@@ -521,7 +512,7 @@ export default function PantryScreen({ navigation }) {
         <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading your pantry...</Text>
+          <Text style={styles.loadingText}>Loading dishes...</Text>
         </View>
       </SafeAreaView>
     );
@@ -531,33 +522,90 @@ export default function PantryScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
       
-      {pantryItems.length === 0 ? (
+      {/* Header with greeting and search */}
+      <View style={styles.headerContainer}>
+        
+        <View style={styles.searchContainer}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search dishes"
+            placeholderTextColor="#999"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              style={styles.clearButton}
+              onPress={() => setSearchQuery('')}
+            >
+              <Text style={styles.clearButtonText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+      
+      {/* Main content */}
+      {filteredItems.length === 0 ? (
         renderEmptyState()
       ) : (
-        <View style={styles.contentContainer}>
-          <FlatList
-            data={filteredItems}
-            keyExtractor={(item) => String(item.id)}
-            renderItem={renderGridItem}
-            ListHeaderComponent={renderHeader}
-            ListFooterComponent={renderAnalytics}
-            ListEmptyComponent={searchQuery.length > 0 ? renderNoResults : null}
-            numColumns={2}
-            columnWrapperStyle={filteredItems.length > 0 ? styles.row : null}
-            contentContainerStyle={styles.listContainer}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#4CAF50']}
-                tintColor="#4CAF50"
+        <ScrollView 
+          style={styles.contentContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#4CAF50']}
+              tintColor="#4CAF50"
+            />
+          }
+        >
+          {/* Popular Dishes Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Popular dishes</Text>
+              <TouchableOpacity>
+                <Text style={styles.viewAllText}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {filteredItems.length > 0 ? (
+              <FlatList
+                horizontal
+                data={filteredItems.slice(0, 4)}
+                keyExtractor={(item) => `popular-${item.id}`}
+                renderItem={renderGridItem}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalList}
               />
-            }
-            showsVerticalScrollIndicator={false}
-          />
-        </View>
+            ) : (
+              searchQuery.length > 0 && renderNoResults()
+            )}
+          </View>
+          
+          {/* Recipe of the Week Section */}
+          {filteredItems.length > 4 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Recipe of the week</Text>
+                <TouchableOpacity>
+                  <Text style={styles.viewAllText}>View All</Text>
+                </TouchableOpacity>
+              </View>
+              
+              <FlatList
+                horizontal
+                data={filteredItems.slice(4, 8)}
+                keyExtractor={(item) => `recipe-${item.id}`}
+                renderItem={renderGridItem}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.horizontalList}
+              />
+            </View>
+          )}
+        </ScrollView>
       )}
-
+      
       {/* Floating Action Button */}
       <TouchableOpacity
         style={styles.fab}
@@ -599,7 +647,7 @@ export default function PantryScreen({ navigation }) {
             <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                 <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Edit Item</Text>
+                  <Text style={styles.modalTitle}>Edit Dish</Text>
                   <TouchableOpacity onPress={cancelEdit} style={styles.closeButton}>
                     <Text style={styles.closeButtonText}>✕</Text>
                   </TouchableOpacity>
@@ -607,12 +655,12 @@ export default function PantryScreen({ navigation }) {
 
                 <View style={styles.formContainer}>
                   <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Item Name</Text>
+                    <Text style={styles.label}>Dish Name</Text>
                     <TextInput
                       style={styles.input}
                       value={editForm.item_name}
                       onChangeText={(text) => setEditForm(prev => ({ ...prev, item_name: text }))}
-                      placeholder="Enter item name"
+                      placeholder="Enter dish name"
                       placeholderTextColor="#999"
                     />
                   </View>
@@ -661,7 +709,7 @@ export default function PantryScreen({ navigation }) {
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Share Item</Text>
+                <Text style={styles.modalTitle}>Share Dish</Text>
                 <TouchableOpacity onPress={cancelShare} style={styles.closeButton}>
                   <Text style={styles.closeButtonText}>✕</Text>
                 </TouchableOpacity>
@@ -682,7 +730,7 @@ export default function PantryScreen({ navigation }) {
               )}
 
               <Text style={styles.shareDescription}>
-                Share this item with your neighbors. They'll be able to see and request it.
+                Share this dish with your neighbors. They'll be able to see and request it.
               </Text>
 
               <TouchableOpacity style={styles.shareButton} onPress={shareItem}>
@@ -718,10 +766,21 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 10,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
+  
+  // Header styles
+  headerContainer: {
+    padding: 20,
     paddingBottom: 10,
+  },
+  greeting: {
+    fontSize: 16,
+    color: '#666',
+  },
+  userName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -730,7 +789,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     paddingHorizontal: 20,
     paddingVertical: 15,
-    marginBottom: 25,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -740,6 +798,7 @@ const styles = StyleSheet.create({
   searchIcon: {
     fontSize: 18,
     marginRight: 12,
+    color: '#999',
   },
   searchInput: {
     flex: 1,
@@ -753,14 +812,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#999',
   },
+  
+  // Section styles
+  section: {
+    marginBottom: 25,
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 20,
     marginBottom: 15,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
   },
@@ -769,24 +834,23 @@ const styles = StyleSheet.create({
     color: '#4CAF50',
     fontWeight: '600',
   },
-  listContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 100,
+  horizontalList: {
+    paddingLeft: 20,
+    paddingRight: 10,
   },
-  row: {
-    justifyContent: 'space-between',
-    marginBottom: 15,
-  },
+  
+  // Grid item styles
   gridItem: {
     backgroundColor: '#fff',
     borderRadius: 20,
-    padding: 16,
-    width: (width - 55) / 2,
+    width: 160,
+    marginRight: 15,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 3,
+    overflow: 'hidden',
   },
   gridItemExpiring: {
     backgroundColor: '#fff8e1',
@@ -799,70 +863,52 @@ const styles = StyleSheet.create({
     borderColor: '#f44336',
   },
   gridItemContent: {
-    flex: 1,
+    padding: 15,
   },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  itemEmoji: {
-    fontSize: 32,
-  },
-  itemActions: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  actionButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  foodImageContainer: {
+    width: '100%',
+    height: 120,
+    borderRadius: 15,
     backgroundColor: '#f5f5f5',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  foodImage: {
+    width: '100%',
+    height: '100%',
+  },
+  iconContainer: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  discardButton: {
-    backgroundColor: '#e8f5e8',
-  },
-  actionEmoji: {
-    fontSize: 12,
+  foodIcon: {
+    fontSize: 50,
   },
   itemName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
     marginBottom: 8,
-    lineHeight: 20,
   },
-  itemDetails: {
+  foodDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  quantityContainer: {
+  detailText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  ratingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
   },
-  quantityDot: {
-    fontSize: 8,
-    color: '#4CAF50',
-    marginRight: 6,
-  },
-  quantityText: {
+  ratingText: {
     fontSize: 12,
-    color: '#666',
-  },
-  expirationText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  expiringText: {
-    color: '#ff9800',
-    fontWeight: '600',
-  },
-  expiredText: {
-    color: '#f44336',
-    fontWeight: '600',
+    color: '#FFD700',
+    fontWeight: 'bold',
   },
   statusBadge: {
     paddingHorizontal: 8,

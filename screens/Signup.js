@@ -10,12 +10,11 @@ export default function Signup({ navigation }) {
   const [surname, setSurname] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [city, setCity] = useState('');
   const [loading, setLoading] = useState(false);
   const [secureEntry, setSecureEntry] = useState(true);
   const [secureConfirmEntry, setSecureConfirmEntry] = useState(true);
 
-  const insertProfile = async (user, email, name, surname, city) => {
+  const insertProfile = async (user, email, name, surname) => {
     const fallbackLatitude = 41.0082;
     const fallbackLongitude = 28.9784;
 
@@ -35,7 +34,7 @@ export default function Signup({ navigation }) {
 
     const locationPoint = `POINT(${longitude} ${latitude})`;
 
-    const { data: insertData, error: insertError } = await supabase.from('profile').insert([{
+    const { error } = await supabase.from('profile').insert([{
       id: user.id,
       email,
       name,
@@ -43,7 +42,6 @@ export default function Signup({ navigation }) {
       latitude,
       longitude,
       location: locationPoint,
-      city,
       created_at: new Date().toISOString(),
       last_active: new Date().toISOString(),
       is_sharing: false,
@@ -58,13 +56,11 @@ export default function Signup({ navigation }) {
       updated_at: new Date().toISOString()
     }]);
 
-    if (insertError) {
-      console.error('Profile insert error:', insertError.message);
-      Alert.alert('Profile Error', insertError.message);
-      throw insertError;
+    if (error) {
+      console.error('Profile insert error:', error.message);
+      Alert.alert('Profile Error', error.message);
+      throw error;
     }
-
-    return insertData;
   };
 
   const handleSignup = async () => {
@@ -103,7 +99,7 @@ export default function Signup({ navigation }) {
 
       const user = data?.user;
       if (user) {
-        await insertProfile(user, email, name, surname, city);
+        await insertProfile(user, email, name, surname);
         Alert.alert('Success', 'Account created successfully!', [
           {
             text: 'OK',
@@ -126,14 +122,12 @@ export default function Signup({ navigation }) {
     >
       <StatusBar barStyle="light-content" backgroundColor="#1c1c1c" />
       
-      {/* Header */}
       <View style={styles.header}>
         <Ionicons name="person-add" size={40} color="#00C897" style={styles.logo} />
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Join Smart Pantry to reduce food waste</Text>
       </View>
 
-      {/* Form */}
       <View style={styles.formContainer}>
         <View style={styles.nameRow}>
           <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
@@ -156,18 +150,6 @@ export default function Signup({ navigation }) {
               autoCapitalize="words"
             />
           </View>
-        </View>
-
-        <View style={styles.inputContainer}>
-          <Ionicons name="location-outline" size={20} color="#aaa" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="City"
-            placeholderTextColor="#aaa"
-            value={city}
-            onChangeText={setCity}
-            autoCapitalize="words"
-          />
         </View>
 
         <View style={styles.inputContainer}>
@@ -238,7 +220,6 @@ export default function Signup({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Footer */}
       <View style={styles.footer}>
         <Text style={styles.footerText}>Already have an account?</Text>
         <TouchableOpacity onPress={() => navigation.navigate('Login')}>

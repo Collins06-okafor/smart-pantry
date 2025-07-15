@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, ActivityIndicator, RefreshControl, TextInput
+  TouchableOpacity, ActivityIndicator, RefreshControl, TextInput, Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useNavigation } from '@react-navigation/native';
 import {
   Package, AlertTriangle, Trash2, LogOut, RefreshCw, Search,
-  Plus, ChefHat, UserPlus, History, BarChart3, Users
+  Plus, ChefHat, UserPlus, History, BarChart3, Users, User
 } from 'lucide-react-native';
 
 const COLORS = {
@@ -31,6 +31,8 @@ export default function DashboardScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [dashboardData, setDashboardData] = useState({
     name: '',
+    email: '',
+    profilePhotoUrl: null,
     pantryCount: 0,
     expiringSoon: [],
     discardedStats: { thisMonth: 0, total: 0 }
@@ -40,6 +42,18 @@ export default function DashboardScreen() {
     if (!searchQuery.trim()) return;
     navigation.navigate('Pantry', { query: searchQuery.trim() });
     setSearchQuery('');
+  };
+
+  const getNameFromEmail = (email) => {
+    if (!email) return '';
+    
+    const localPart = email.split('@')[0]; // 'john.doe'
+    const nameParts = localPart.split(/[._-]/); // Split by dot, underscore, or hyphen
+    
+    // Filter out empty parts and numbers, then capitalize each part
+    const validParts = nameParts.filter(part => part.length > 0 && !(/^\d+$/.test(part)));
+    
+    return validParts.map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
   };
 
   const fetchData = async () => {
@@ -52,32 +66,61 @@ export default function DashboardScreen() {
       }
 
       const [profileResult, pantryResult, discardedResult] = await Promise.all([
-        supabase.from('profile').select('name').eq('id', user.id).single(),
+        supabase.from('profile').select('name, first_name, last_name, profile_photo_url').eq('id', user.id).single(),
         supabase.from('pantry_items').select('*').eq('user_id', user.id),
-        supabase.from('discarded_items').select('timestamp').eq('user_id', user.id),
+        supabase.from('discarded_items').select('timestamp, item_id').eq('user_id', user.id), // Include item_id to filter out discarded items
       ]);
 
-      const name = profileResult.data?.name?.split(' ')[0] || 'User';
+      const profile = profileResult.data;
       const pantryItems = pantryResult.data || [];
+      const discardedItems = discardedResult.data || [];
+
+      // Get IDs of discarded items to filter them out from pantry count
+      const discardedItemIds = new Set(discardedItems.map(item => item.item_id));
+      
+      // Filter out discarded items from pantry items
+      const activePantryItems = pantryItems.filter(item => !discardedItemIds.has(item.id));
+
+      // Get full name - priority: full name field, then first+last, then email parsing
+      let fullName = '';
+      if (profile?.name) {
+        fullName = profile.name;
+      } else if (profile?.first_name || profile?.last_name) {
+        fullName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+      } else {
+        fullName = getNameFromEmail(user.email);
+      }
+      
+      // Debug logging
+      console.log('Profile data:', profile);
+      console.log('User email:', user.email);
+      console.log('Final fullName:', fullName);
+      console.log('Total pantry items:', pantryItems.length);
+      console.log('Discarded items:', discardedItems.length);
+      console.log('Active pantry items:', activePantryItems.length);
 
       const today = new Date();
       const in3Days = new Date(today.getTime() + 3 * 86400000);
-      const expiringSoon = pantryItems.filter(item => {
+      
+      // Use active pantry items for expiring soon calculation
+      const expiringSoon = activePantryItems.filter(item => {
         if (!item.expiration_date) return false;
         const expDate = new Date(item.expiration_date);
         return !isNaN(expDate.getTime()) && expDate >= today && expDate <= in3Days;
       });
 
       const now = new Date();
-      const discardedItems = discardedResult.data || [];
       const thisMonthCount = discardedItems.filter(item => {
         const d = new Date(item.timestamp);
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       }).length;
 
+      // Set dashboard data ONCE with all the correct values
       setDashboardData({
-        name,
-        pantryCount: pantryItems.length,
+        name: fullName,
+        email: user.email,
+        profilePhotoUrl: profile?.profile_photo_url,
+        pantryCount: activePantryItems.length, // Use active items count instead of all items
         expiringSoon,
         discardedStats: {
           thisMonth: thisMonthCount,
@@ -122,11 +165,23 @@ export default function DashboardScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Good day!</Text>
-            <Text style={styles.name}>{dashboardData.name} 👋</Text>
+          <View style={styles.headerLeft}>
+            <Text style={styles.greeting}>Good day</Text>
+            <Text style={styles.name}>{dashboardData.name}</Text>
           </View>
-          <View style={styles.actions}>
+
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.profileIcon}>
+              {dashboardData.profilePhotoUrl ? (
+                <Image 
+                  source={{ uri: dashboardData.profilePhotoUrl }} 
+                  style={styles.profileImage}
+                  onError={() => console.log('Profile image failed to load')}
+                />
+              ) : (
+                <User size={24} color={COLORS.white} />
+              )}
+            </TouchableOpacity>
             <TouchableOpacity onPress={onRefresh} style={styles.iconButton}>
               <RefreshCw size={20} color={COLORS.gray} />
             </TouchableOpacity>
@@ -140,7 +195,7 @@ export default function DashboardScreen() {
         <View style={styles.searchContainer}>
           <Search size={18} color="#888" style={styles.searchIcon} />
           <TextInput
-            placeholder="Search pantry items"
+            placeholder="Search dishes"
             placeholderTextColor="#999"
             style={styles.searchInput}
             value={searchQuery}
@@ -243,8 +298,24 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 20, backgroundColor: COLORS.bg },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  greeting: { fontSize: 16, color: COLORS.gray },
+  headerLeft: { flex: 1 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  greeting: { fontSize: 16, color: COLORS.gray, marginBottom: 4 },
   name: { fontSize: 24, fontWeight: 'bold', color: COLORS.text },
+  profileIcon: { 
+    width: 40, 
+    height: 40, 
+    borderRadius: 20, 
+    backgroundColor: COLORS.primary, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    overflow: 'hidden', // Important for circular image
+  },
+  profileImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
   actions: { flexDirection: 'row', gap: 10 },
   iconButton: { padding: 10, borderRadius: 999, backgroundColor: '#eee' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eee', borderRadius: 20, padding: 10, marginBottom: 20 },

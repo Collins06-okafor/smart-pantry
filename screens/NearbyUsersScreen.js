@@ -53,7 +53,7 @@ const NearbyUsersScreen = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Users near me</Text>
+        <Text style={styles.headerTitle}></Text>
       </View>
 
       {/* Map */}

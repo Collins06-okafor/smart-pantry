@@ -154,13 +154,13 @@ export default function AddItemScreen({ route, navigation }) {
     const unsubscribe = navigation.addListener('focus', () => {
       if (route.params?.imageUri) {
         setItemImage(route.params.imageUri);
-        // Clear the parameter after using it
-        navigation.setParams({ imageUri: null });
+        // Clear the parameter after using it to prevent issues
+        navigation.setParams({ imageUri: undefined });
       }
     });
 
     return unsubscribe;
-  }, [navigation]);
+  }, [navigation, route.params?.imageUri]);
 
   // Calculate effective expiration date when item is opened
   useEffect(() => {
@@ -259,6 +259,16 @@ export default function AddItemScreen({ route, navigation }) {
     setShowImageOptions(true);
   };
 
+  // Fixed camera handler - use callback instead of navigation params
+  const handleOpenCamera = () => {
+    setShowImageOptions(false);
+    navigation.navigate('Camera', {
+      onPhotoTaken: (photoUri) => {
+        setItemImage(photoUri);
+      },
+    });
+  };
+
   const selectImageFromCamera = () => {
     const options = {
       mediaType: 'photo',
@@ -345,6 +355,17 @@ export default function AddItemScreen({ route, navigation }) {
         description: description.trim() || null,
         image_url: itemImage,
       };
+
+      await supabase
+  .from('pantry_items')
+  .insert({
+    user_id: user.id,
+    item_name: itemName,
+    quantity: qty,
+    expiration_date: date,
+    image_url: photoUri, // Save the captured photo here
+  });
+
 
       const response = editingItem
         ? await supabase.from('pantry_items').update(item).eq('id', editingItem.id)
@@ -488,13 +509,7 @@ export default function AddItemScreen({ route, navigation }) {
           <View style={styles.imageOptions}>
             <TouchableOpacity
               style={styles.imageOption}
-              onPress={() => {
-                setShowImageOptions(false);
-                navigation.navigate('Camera', {
-                  returnScreen: 'AddItem',
-                  timestamp: Date.now(),
-                });
-              }}
+              onPress={handleOpenCamera}
             >
               <Ionicons name="camera" size={24} color="#00C897" />
               <Text style={styles.imageOptionText}>Take Photo</Text>

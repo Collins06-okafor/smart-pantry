@@ -18,18 +18,15 @@ const CameraScreen = ({ navigation, route }) => {
     if (cameraRef.current && isCameraReady) {
       try {
         const photo = await cameraRef.current.takePictureAsync();
-        
-        // Navigate back with the image URI as a parameter
-        navigation.navigate({
-          name: route.params?.returnScreen || 'AddItem',
-          params: { 
-            imageUri: photo.uri,
-            // Merge with existing params if any
-            ...route.params?.returnParams 
-          },
-          merge: true,
-        });
-        
+
+        // Call the callback passed from the previous screen
+        if (route.params?.onPhotoTaken) {
+          route.params.onPhotoTaken(photo.uri);
+        }
+
+        // Go back instead of navigating to avoid pushing a new screen
+        navigation.goBack();
+
       } catch (err) {
         Alert.alert('Error', 'Failed to take photo.');
         console.error(err);
@@ -37,7 +34,6 @@ const CameraScreen = ({ navigation, route }) => {
     }
   };
 
-  // Add a cancel/back button handler
   const handleCancel = () => {
     navigation.goBack();
   };
@@ -72,13 +68,13 @@ const CameraScreen = ({ navigation, route }) => {
         facing="back"
         onCameraReady={() => setIsCameraReady(true)}
       />
-      
-      {/* Cancel button */}
+
+      {/* Cancel Button */}
       <TouchableOpacity onPress={handleCancel} style={styles.cancelButton}>
         <Text style={styles.cancelText}>✕</Text>
       </TouchableOpacity>
-      
-      {/* Capture button */}
+
+      {/* Capture Button */}
       <View style={styles.buttonContainer}>
         <TouchableOpacity onPress={takePicture} style={styles.captureButton}>
           <Text style={styles.captureText}>📷</Text>

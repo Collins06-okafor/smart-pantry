@@ -174,7 +174,7 @@ export default function LocationPickerScreen({ navigation }) {
   );
 
   return (
-    <View style={{ flex: 1 }}>
+  <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Hi{firstName ? `, ${firstName}` : ''} 👋</Text>
         <Text style={styles.subtitle}>
@@ -279,6 +279,11 @@ export default function LocationPickerScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  container: {
+  flex: 1,
+  backgroundColor: '#1c1c1c',
+},
+
   header: { 
     padding: 20,
     backgroundColor: '#fff',

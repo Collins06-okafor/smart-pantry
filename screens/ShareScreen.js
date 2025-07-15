@@ -12,6 +12,8 @@ import {
   SafeAreaView,
   StatusBar,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
@@ -98,36 +100,37 @@ const useShareData = (currentUser) => {
     }
   }, []);
 
-  const fetchFoodRequests = useCallback(async (userIds) => {
-    if (userIds.length === 0) {
-      setFoodRequests([]);
-      return;
-    }
+ const fetchFoodRequests = useCallback(async (userIds) => {
+  try {
+    console.log('Fetching food requests for user:', currentUser?.id);
+    const { data, error } = await supabase
+      .from('food_requests')
+      .select(`
+        id,
+        item_name,
+        description,
+        urgency,
+        created_at,
+        status,
+        requester_id,
+        profile!food_requests_requester_id_fkey(name)
+      `)
+      .neq('requester_id', currentUser.id)
+      .eq('status', STATUSES.ACTIVE)
+      .order('created_at', { ascending: false });
 
-    try {
-      const { data, error } = await supabase
-        .from('food_requests')
-        .select(`
-          id,
-          item_name,
-          description,
-          urgency,
-          requested_at,
-          status,
-          user_id,
-          profile!food_requests_user_id_fkey(name, latitude, longitude)
-        `)
-        .in('user_id', userIds)
-        .eq('status', STATUSES.ACTIVE)
-        .order('requested_at', { ascending: false });
-
-      if (error) throw error;
-      setFoodRequests(data || []);
-    } catch (err) {
-      console.error('Error fetching food requests:', err);
-      setFoodRequests([]);
+    if (error) {
+      console.error('Supabase error:', error);
+      throw error;
     }
-  }, []);
+    
+    console.log('Fetched requests:', data);
+    setFoodRequests(data || []);
+  } catch (err) {
+    console.error('Error in fetchFoodRequests:', err);
+    setFoodRequests([]);
+  }
+}, [currentUser?.id]);
 
   const fetchSharedItems = useCallback(async (userIds) => {
     if (userIds.length === 0) {
@@ -329,7 +332,8 @@ const getExpirationStatus = (dateString) => {
 };
 
 // Main component
-export default function ShareScreen({ navigation }) {
+export default function ShareScreen({ navigation, route }) {
+  const initialTab = route.params?.initialTab || TABS.AVAILABLE;
   const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState(TABS.AVAILABLE);
   const [offerMessage, setOfferMessage] = useState('');
@@ -400,6 +404,12 @@ export default function ShareScreen({ navigation }) {
     initializeScreen();
   }, [fetchNearbyUsers, setLoading]);
 
+  useEffect(() => {
+    if (route.params?.initialTab) {
+      setActiveTab(route.params.initialTab);
+    }
+  }, [route.params?.initialTab]);
+
   useFocusEffect(
     useCallback(() => {
       if (currentUser) {
@@ -434,21 +444,69 @@ export default function ShareScreen({ navigation }) {
 
   // Action handlers
   const handleRequestItem = useCallback(async (sharedItemId) => {
-    try {
-      const { error } = await supabase
-        .from('shared_items')
-        .update({ status: STATUSES.REQUESTED })
-        .eq('id', sharedItemId);
+  try {
+    // 1. Fetch the shared item details
+    const { data: sharedItem, error: fetchError } = await supabase
+      .from('shared_items')
+      .select('*, pantry_items(*)')
+      .eq('id', sharedItemId)
+      .single();
 
-      if (error) throw error;
+    if (fetchError) throw fetchError;
+    if (!sharedItem) throw new Error('Shared item not found');
 
-      Alert.alert('Success', 'Item requested! The owner will be notified.');
-      await refreshAllData();
-    } catch (err) {
-      console.error('Error requesting item:', err);
-      Alert.alert('Error', 'Failed to request item. Please try again.');
-    }
-  }, [refreshAllData]);
+    // 2. Create the food request
+    const { data: request, error: requestError } = await supabase
+      .from('food_requests')
+      .insert({
+        requester_id: currentUser.id,
+        item_name: sharedItem.pantry_items?.item_name || 'Food Item',
+        description: `Request for ${sharedItem.pantry_items?.item_name || 'food item'}`,
+        urgency: 'medium',
+        status: 'active',
+        related_item_id: sharedItem.item_link,
+        related_sharer_id: sharedItem.user_id
+      })
+      .select()
+      .single();
+
+    if (requestError) throw requestError;
+    if (!request?.id) throw new Error('Failed to create food request');
+
+    // 3. Update the shared item status
+    const { error: updateError } = await supabase
+      .from('shared_items')
+      .update({ status: STATUSES.REQUESTED })
+      .eq('id', sharedItemId);
+
+    if (updateError) throw updateError;
+
+    Alert.alert('Success', 'Item requested! The owner will be notified.');
+    await refreshAllData();
+  } catch (err) {
+    console.error('Error requesting item:', err);
+    Alert.alert('Error', err.message || 'Failed to request item. Please try again.');
+  }
+}, [currentUser?.id, refreshAllData]);
+
+const fetchConnectedRequests = useCallback(async (userId) => {
+  try {
+    const { data, error } = await supabase
+      .from('request_item_connections')
+      .select(`
+        *,
+        food_requests!inner(*),
+        pantry_items!inner(*)
+      `)
+      .or(`pantry_items.user_id.eq.${userId},food_requests.requester_id.eq.${userId}`);
+
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('Error fetching connected requests:', err);
+    return [];
+  }
+}, []);
 
   const handleRemoveSharedItem = useCallback(async (sharedItemId) => {
     try {
@@ -532,45 +590,45 @@ export default function ShareScreen({ navigation }) {
   }, [currentUser?.id, offerMessage, offerModal, refreshAllData]);
 
   // Render functions
-  const renderFoodRequest = useCallback(({ item }) => (
-    <View style={styles.itemCard}>
-      <View style={styles.itemHeader}>
-        <Text style={styles.itemName}>{item.item_name}</Text>
-        <View style={[styles.urgencyBadge, { backgroundColor: getUrgencyColor(item.urgency) }]}>
-          <Text style={styles.urgencyText}>{getUrgencyText(item.urgency)}</Text>
-        </View>
+ const renderFoodRequest = useCallback(({ item }) => (
+  <View style={styles.itemCard}>
+    <View style={styles.itemHeader}>
+      <Text style={styles.itemName}>{item.item_name}</Text>
+      <View style={[styles.urgencyBadge, { backgroundColor: getUrgencyColor(item.urgency) }]}>
+        <Text style={styles.urgencyText}>{getUrgencyText(item.urgency)}</Text>
       </View>
-      
-      <View style={styles.itemDetails}>
-        <Text style={styles.detailText}>📝 {item.description}</Text>
-        <Text style={styles.detailText}>
-          👤 Requested by: {item.profile?.name || 'Anonymous'}
-        </Text>
-        <Text style={styles.detailText}>
-          📅 Requested: {formatDate(item.requested_at)}
-        </Text>
-      </View>
-
-      <TouchableOpacity 
-        style={styles.helpButton} 
-        onPress={() => offerModal.open(item)}
-        accessibilityLabel={`Offer help for ${item.item_name}`}
-      >
-        <Ionicons name="hand-left" size={20} color="#fff" />
-        <Text style={styles.helpButtonText}> Offer Help</Text>
-      </TouchableOpacity>
     </View>
-  ), [offerModal]);
+    
+    <View style={styles.itemDetails}>
+      <Text style={styles.detailText}>📝 {item.description}</Text>
+      <Text style={styles.detailText}>
+        👤 Requested by: {item.profile?.name || 'Anonymous'}
+      </Text>
+      <Text style={styles.detailText}>
+        📅 Requested: {formatDate(item.created_at)}
+      </Text>
+    </View>
+
+    <TouchableOpacity 
+      style={styles.helpButton} 
+      onPress={() => offerModal.open(item)}
+      accessibilityLabel={`Offer help for ${item.item_name}`}
+    >
+      <Ionicons name="hand-left" size={20} color="#fff" />
+      <Text style={styles.helpButtonText}> Offer Help</Text>
+    </TouchableOpacity>
+  </View>
+), [offerModal]);
 
   const renderNearbyItem = useCallback(({ item }) => {
-    const pantryItem = item.pantry_items;
-    if (!pantryItem) return null;
+  const pantryItem = item.pantry_items;
+  if (!pantryItem) return null;
 
-    const isExpiringSoon = item.expirationStatus.status === 'expiring' || item.expirationStatus.status === 'expired';
+  const isExpiringSoon = item.expirationStatus.status === 'expiring' || item.expirationStatus.status === 'expired';
 
-    return (
-      <View style={styles.itemCard}>
-        <View style={styles.itemHeader}>
+  return (
+    <View style={styles.itemCard}>
+      <View style={styles.itemHeader}>
           <Text style={styles.itemName}>{pantryItem.item_name}</Text>
           <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
             <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
@@ -593,8 +651,9 @@ export default function ShareScreen({ navigation }) {
             <Ionicons name="time" size={16} color="#666" /> Shared: {formatDate(item.offered_at)}
           </Text>
         </View>
-
-        {item.status === STATUSES.AVAILABLE && (
+      
+      {item.status === STATUSES.AVAILABLE && (
+        <>
           <TouchableOpacity 
             style={styles.requestButton} 
             onPress={() => handleRequestItem(item.id)}
@@ -603,10 +662,22 @@ export default function ShareScreen({ navigation }) {
             <Ionicons name="cart" size={20} color="#fff" />
             <Text style={styles.requestButtonText}> Request Item</Text>
           </TouchableOpacity>
-        )}
-      </View>
-    );
-  }, [handleRequestItem]);
+          
+          <TouchableOpacity 
+            style={styles.requestHelpButton} 
+            onPress={() => navigation.navigate('RequestFood', { 
+              sharerId: item.user_id,
+              item: pantryItem 
+            })}
+          >
+            <Ionicons name="hand-left" size={20} color="#fff" />
+            <Text style={styles.requestButtonText}> Request Help for This</Text>
+          </TouchableOpacity>
+        </>
+      )}
+    </View>
+  );
+}, [handleRequestItem, navigation]);
 
   const renderMySharedItem = useCallback(({ item }) => {
     const pantryItem = item.pantry_items;
@@ -849,64 +920,67 @@ export default function ShareScreen({ navigation }) {
 
       {/* Offer Help Modal */}
       <Modal
-        animationType="slide"
-        transparent
-        visible={offerModal.isOpen}
-        onRequestClose={offerModal.close}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Offer Help</Text>
-            
-            {offerModal.selectedItem && (
-              <View style={styles.shareItemPreview}>
-                <Text style={styles.shareItemName}>
-                  {offerModal.selectedItem.item_name}
-                </Text>
-                <Text style={styles.shareItemDetail}>
-                  <Ionicons name="person" size={16} color="#666" /> 
-                  Requested by: {offerModal.selectedItem.profile?.name || 'Anonymous'}
-                </Text>
-                <Text style={styles.shareItemDetail}>
-                  <Ionicons name="document-text" size={16} color="#666" /> 
-                  {offerModal.selectedItem.description}
-                </Text>
-              </View>
-            )}
-
-            <Text style={styles.shareDescription}>
-              Send a message to offer help with this food request:
-            </Text>
-
-            <TextInput
-              style={styles.messageInput}
-              placeholder="Type your message here..."
-              multiline
-              numberOfLines={4}
-              value={offerMessage}
-              onChangeText={setOfferMessage}
-              accessibilityLabel="Message to offer help"
-              textAlignVertical="top"
-            />
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.cancelButton} 
-                onPress={offerModal.close}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.confirmButton} 
-                onPress={() => handleOfferHelp(offerModal.selectedItem?.id)}
-              >
-                <Ionicons name="hand-left" size={20} color="#fff" />
-                <Text style={styles.confirmButtonText}> Send Offer</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+  animationType="slide"
+  transparent
+  visible={offerModal.isOpen}
+  onRequestClose={offerModal.close}
+>
+  <KeyboardAvoidingView
+    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    style={styles.modalOverlay}
+  >
+    <View style={styles.modalContent}>
+      <Text style={styles.modalTitle}>Offer Help</Text>
+      
+      {offerModal.selectedItem && (
+        <View style={styles.shareItemPreview}>
+          <Text style={styles.shareItemName}>
+            {offerModal.selectedItem.item_name}
+          </Text>
+          <Text style={styles.shareItemDetail}>
+            <Ionicons name="person" size={16} color="#666" /> 
+            Requested by: {offerModal.selectedItem.profile?.name || 'Anonymous'}
+          </Text>
+          <Text style={styles.shareItemDetail}>
+            <Ionicons name="document-text" size={16} color="#666" /> 
+            {offerModal.selectedItem.description}
+          </Text>
         </View>
-      </Modal>
+      )}
+
+      <Text style={styles.shareDescription}>
+        Send a message to offer help with this food request:
+      </Text>
+
+      <TextInput
+        style={styles.messageInput}
+        placeholder="Type your message here..."
+        multiline
+        numberOfLines={4}
+        value={offerMessage}
+        onChangeText={setOfferMessage}
+        accessibilityLabel="Message to offer help"
+        textAlignVertical="top"
+      />
+
+      <View style={styles.modalButtons}>
+        <TouchableOpacity 
+          style={styles.cancelButton} 
+          onPress={offerModal.close}
+        >
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.confirmButton} 
+          onPress={() => handleOfferHelp(offerModal.selectedItem?.id)}
+        >
+          <Ionicons name="hand-left" size={20} color="#fff" />
+          <Text style={styles.confirmButtonText}> Send Offer</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </KeyboardAvoidingView>
+</Modal>
     </SafeAreaView>
   );
 }
@@ -1133,6 +1207,15 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  requestHelpButton: {
+    backgroundColor: '#5a2ca0',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 8,
   },
   // Modal Styles
   modalOverlay: {
