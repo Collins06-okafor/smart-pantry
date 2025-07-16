@@ -438,48 +438,53 @@ export default function ProfileScreen() {
   };
 
   const continueSavingProfile = async () => {
-    try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !user) {
-        Alert.alert('Error', 'Authentication failed');
+  try {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      Alert.alert('Error', 'Authentication failed');
+      return;
+    }
+
+    let profile_photo_url = profile.profile_photo_url;
+
+    if (profilePhoto) {
+      try {
+        profile_photo_url = await uploadProfilePhoto(user, profilePhoto);
+        setProfilePhoto(null);
+      } catch (error) {
+        console.error('Photo upload error:', error);
+        Alert.alert('Upload Error', error.message || 'Failed to upload profile photo');
         return;
       }
-
-      let profile_photo_url = profile.profile_photo_url;
-
-      if (profilePhoto) {
-        try {
-          profile_photo_url = await uploadProfilePhoto(user, profilePhoto);
-          setProfilePhoto(null);
-        } catch (error) {
-          console.error('Photo upload error:', error);
-          Alert.alert('Upload Error', error.message || 'Failed to upload profile photo');
-          return;
-        }
-      }
-
-      const updates = {
-        ...profile,
-        id: user.id,
-        latitude: profile.latitude ? parseFloat(profile.latitude) : null,
-        longitude: profile.longitude ? parseFloat(profile.longitude) : null,
-        profile_photo_url,
-        updated_at: new Date().toISOString(),
-        allergies: allergies.split(',').map(a => a.trim().toLowerCase()).filter(a => a.length > 0),
-      };
-
-      const { error } = await supabase.from('profile').upsert(updates);
-      
-      if (error) throw error;
-
-      setProfile(prev => ({ ...prev, profile_photo_url }));
-      Alert.alert('Success', 'Profile updated successfully!');
-    } catch (error) {
-      console.error('Save profile error:', error);
-      Alert.alert('Error', error.message || 'Failed to update profile');
     }
-  };
+
+    // Process allergies
+    const processedAllergies = allergies.split(',').map(a => a.trim().toLowerCase()).filter(a => a.length > 0);
+
+    const updates = {
+      ...profile,
+      id: user.id,
+      latitude: profile.latitude ? parseFloat(profile.latitude) : null,
+      longitude: profile.longitude ? parseFloat(profile.longitude) : null,
+      profile_photo_url,
+      date_of_birth: profile.date_of_birth && profile.date_of_birth.trim() !== '' ? profile.date_of_birth : null,
+      updated_at: new Date().toISOString(),
+      // Fix: Return null if no allergies, otherwise return the array
+      allergies: processedAllergies.length > 0 ? processedAllergies : null,
+    };
+
+    const { error } = await supabase.from('profile').upsert(updates);
+    
+    if (error) throw error;
+
+    setProfile(prev => ({ ...prev, profile_photo_url }));
+    Alert.alert('Success', 'Profile updated successfully!');
+  } catch (error) {
+    console.error('Save profile error:', error);
+    Alert.alert('Error', error.message || 'Failed to update profile');
+  }
+};
 
   // Location handling
   const fetchCurrentLocation = async () => {

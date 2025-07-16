@@ -31,20 +31,77 @@ const NearbyUsersScreen = () => {
 
     async function fetchNearbyUsers() {
       try {
-        // Mock nearby users for now
-        setNearbyUsers([
-          { id: '1', name: 'Alice', latitude: location.latitude + 0.01, longitude: location.longitude + 0.01 },
-          { id: '2', name: 'Bob', latitude: location.latitude - 0.01, longitude: location.longitude - 0.01 },
-          { id: '3', name: 'Charlie', latitude: location.latitude + 0.005, longitude: location.longitude - 0.007 },
-        ]);
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Query profile table for users with location data
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profile')
+          .select('id, name, latitude, longitude')
+          .neq('id', user.id) // Exclude current user
+          .not('latitude', 'is', null) // Only users with location data
+          .not('longitude', 'is', null)
+          .gte('latitude', location.latitude - (radiusKm / 111)) // Rough rectangular search
+          .lte('latitude', location.latitude + (radiusKm / 111))
+          .gte('longitude', location.longitude - (radiusKm / (111 * Math.cos(location.latitude * Math.PI / 180))))
+          .lte('longitude', location.longitude + (radiusKm / (111 * Math.cos(location.latitude * Math.PI / 180))));
+
+        if (profilesError) {
+          console.error('Error fetching profiles:', profilesError);
+          setNearbyUsers([]);
+          return;
+        }
+
+        // Calculate exact distance and filter users within radius
+        const usersWithinRadius = (profilesData || []).filter(profile => {
+          const distance = calculateDistance(
+            location.latitude,
+            location.longitude,
+            profile.latitude,
+            profile.longitude
+          );
+          return distance <= radiusKm;
+        }).map(profile => ({
+          id: profile.id,
+          name: profile.name || 'Unknown User',
+          latitude: profile.latitude,
+          longitude: profile.longitude
+        }));
+
+        setNearbyUsers(usersWithinRadius);
+
+        // For development/testing, you can uncomment this to add mock users when no real users are found:
+        // if (usersWithinRadius.length === 0) {
+        //   setNearbyUsers([
+        //     { id: '1', name: 'Alice', latitude: location.latitude + 0.01, longitude: location.longitude + 0.01 },
+        //     { id: '2', name: 'Bob', latitude: location.latitude - 0.01, longitude: location.longitude - 0.01 },
+        //     { id: '3', name: 'Charlie', latitude: location.latitude + 0.005, longitude: location.longitude - 0.007 },
+        //   ]);
+        // }
+
       } catch (err) {
         setErrorMsg('Error fetching nearby users');
-        console.error(err);
+        console.error('Fetch error:', err);
+        setNearbyUsers([]);
       }
     }
 
     fetchNearbyUsers();
   }, [location, radiusKm]);
+
+  // Calculate distance between two coordinates using Haversine formula
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 6371; // Earth's radius in kilometers
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
 
   if (errorMsg) return <View style={styles.center}><Text>{errorMsg}</Text></View>;
   if (!location) return <View style={styles.center}><Text>Fetching location...</Text></View>;
@@ -52,9 +109,6 @@ const NearbyUsersScreen = () => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}></Text>
-      </View>
 
       {/* Map */}
       <MapView
@@ -67,11 +121,13 @@ const NearbyUsersScreen = () => {
         }}
         showsUserLocation
       >
-        {nearbyUsers.map(user => (
+        {/* Only render markers when there are nearby users */}
+        {nearbyUsers.length > 0 && nearbyUsers.map(user => (
           <Marker
             key={user.id}
             coordinate={{ latitude: user.latitude, longitude: user.longitude }}
             title={user.name}
+            description={`Distance: ${calculateDistance(location.latitude, location.longitude, user.latitude, user.longitude).toFixed(1)} km`}
           />
         ))}
       </MapView>
@@ -81,6 +137,13 @@ const NearbyUsersScreen = () => {
         <Text style={styles.subText}>Showing users nearest to you (max 50 shown)</Text>
         <Text style={styles.mainText}>Other users near you</Text>
         <Text style={styles.countText}>{nearbyUsers.length}</Text>
+
+        {/* Show message when no users are found */}
+        {nearbyUsers.length === 0 && (
+          <Text style={styles.noUsersText}>
+            No users found within {radiusKm} km of your location
+          </Text>
+        )}
 
         {/* Distance Selector */}
         <TouchableOpacity onPress={() => setDropdownVisible(true)} style={styles.dropdownButton}>
@@ -99,7 +162,9 @@ const NearbyUsersScreen = () => {
                     setRadiusKm(item);
                     setDropdownVisible(false);
                   }}>
-                    <Text style={styles.modalItem}>{item} km</Text>
+                    <Text style={[styles.modalItem, radiusKm === item && styles.selectedItem]}>
+                      {item} km {radiusKm === item && '✓'}
+                    </Text>
                   </TouchableOpacity>
                 )}
               />
@@ -152,6 +217,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginVertical: 20,
   },
+  noUsersText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
+  },
   dropdownButton: {
     marginTop: 10,
     borderBottomWidth: 1,
@@ -188,6 +260,10 @@ const styles = StyleSheet.create({
   modalItem: {
     fontSize: 18,
     paddingVertical: 10,
+  },
+  selectedItem: {
+    color: '#00C897',
+    fontWeight: '600',
   },
   doneButton: {
     marginTop: 20,

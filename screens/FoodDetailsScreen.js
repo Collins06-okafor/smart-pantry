@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,30 @@ import {
   Share,
   Platform,
   KeyboardAvoidingView,
-  TouchableWithoutFeedback,
-  Keyboard
+  Dimensions,
+  ActionSheetIOS
 } from 'react-native';
+import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import { supabase } from '../lib/supabase';
 import DiscardItemModal from './DiscardItemModal';
+import { Ionicons } from '@expo/vector-icons';
+import { uploadFoodImage } from '../utils/uploadFoodImage';
+
+
+const { width, height } = Dimensions.get('window');
+
+const getItemEmoji = (name) => {
+  if (!name) return '❓';
+  
+  const lower = name.toLowerCase();
+  
+  if (lower.includes('apple')) return '🍎';
+  if (lower.includes('banana')) return '🍌';
+  if (lower.includes('bread')) return '🍞';
+  if (lower.includes('milk')) return '🥛';
+  
+  return '🍽️'; // default
+};
 
 const foodImages = {
   'apple': require('../assets/images/apple.png'),
@@ -56,6 +75,82 @@ const UNIT_OPTIONS = [
   'dozen',
 ];
 
+// Image validation helper
+const validateImageUrl = async (url) => {
+  if (!url) return false;
+  
+  try {
+    const response = await fetch(url, { 
+      method: 'HEAD'
+    });
+    
+    const contentLength = response.headers.get('content-length');
+    const contentType = response.headers.get('content-type');
+    
+    return response.ok && 
+           contentLength && 
+           parseInt(contentLength) > 0 && 
+           contentType && 
+           contentType.startsWith('image/');
+  } catch (error) {
+    console.log('Image validation failed:', error);
+    return false;
+  }
+};
+
+// Image component with fallback
+const ImageWithFallback = ({ 
+  imageUrl, 
+  localImage, 
+  itemName, 
+  style, 
+  onImageError, 
+  ...props 
+}) => {
+  const [currentImageUrl, setCurrentImageUrl] = useState(imageUrl);
+  const [hasError, setHasError] = useState(false);
+  
+  useEffect(() => {
+    setCurrentImageUrl(imageUrl);
+    setHasError(false);
+  }, [imageUrl]);
+
+  const handleImageError = (error) => {
+    console.log('Image error for:', currentImageUrl, error);
+    setHasError(true);
+    onImageError && onImageError(error);
+  };
+
+  if (currentImageUrl && !hasError) {
+    return (
+      <Image
+        source={{ uri: currentImageUrl }}
+        style={style}
+        onError={handleImageError}
+        {...props}
+      />
+    );
+  }
+
+  if (localImage) {
+    return (
+      <Image
+        source={localImage}
+        style={style}
+        {...props}
+      />
+    );
+  }
+
+  return (
+    <View style={[style, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
+      <Text style={{ fontSize: style.width ? style.width * 0.4 : 80 }}>
+        {getItemEmoji(itemName)}
+      </Text>
+    </View>
+  );
+};
+
 const FoodDetailsScreen = ({ route, navigation }) => {
   const { foodItem, expirationStatus } = route.params;
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -67,15 +162,17 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     quantity: foodItem.quantity || '1',
     unit: foodItem.quantity_unit || 'pieces',
     expiration_date: foodItem.expiration_date || '',
-    description: foodItem.description || ''
+    description: foodItem.description || '',
+    image_url: foodItem.image_url || ''
   });
   const [userId, setUserId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   
-  // Refs for input navigation
   const quantityInputRef = useRef(null);
   const expirationInputRef = useRef(null);
   const descriptionInputRef = useRef(null);
+  const scrollViewRef = useRef(null);
 
   React.useEffect(() => {
     const getUserId = async () => {
@@ -91,7 +188,6 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     getUserId();
   }, []);
 
-  // Reset edited item when modal opens
   React.useEffect(() => {
     if (isEditModalVisible) {
       setEditedItem({
@@ -99,7 +195,8 @@ const FoodDetailsScreen = ({ route, navigation }) => {
         quantity: currentItem.quantity || '1',
         unit: currentItem.quantity_unit || 'pieces',
         expiration_date: currentItem.expiration_date || '',
-        description: currentItem.description || ''
+        description: currentItem.description || '',
+        image_url: currentItem.image_url || ''
       });
     }
   }, [isEditModalVisible, currentItem]);
@@ -107,7 +204,6 @@ const FoodDetailsScreen = ({ route, navigation }) => {
   const isExpired = expirationStatus.status === 'expired';
   const isExpiring = expirationStatus.status === 'expiring';
   const localImage = foodImages[currentItem.item_name.toLowerCase()];
-  const hasUserImage = currentItem.image_url && currentItem.image_url.length > 0;
 
   const getItemEmoji = (itemName) => {
     const emojiMap = {
@@ -129,6 +225,143 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     return emojiMap[itemName.toLowerCase()] || '🍽️';
   };
 
+  const deleteOldFoodImage = async (imageUrl) => {
+    if (!imageUrl) return;
+
+    try {
+      const urlParts = imageUrl.split('/');
+      const fileName = urlParts[urlParts.length - 1].split('?')[0];
+      const filePath = `${fileName}`;
+
+      const { error } = await supabase.storage
+        .from('pantry-item-images')
+        .remove([filePath]);
+
+      if (error) {
+        console.log('Error deleting old food image:', error);
+      }
+    } catch (error) {
+      console.log('Error in deleteOldFoodImage:', error);
+    }
+  };
+  
+
+  const uploadFoodItemImage = async (imageUri) => {
+  return await uploadFoodImage(imageUri, userId);
+};
+
+
+  const handleImagePicker = () => {
+    const options = [
+      { text: 'Take Photo', onPress: () => openCamera() },
+      { text: 'Choose from Library', onPress: () => openImageLibrary() },
+      ...(editedItem.image_url ? [{ text: 'Remove Photo', onPress: () => removePhoto() }] : []),
+      { text: 'Cancel', style: 'cancel' }
+    ];
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: options.map(option => option.text),
+          destructiveButtonIndex: editedItem.image_url ? 2 : -1,
+          cancelButtonIndex: options.length - 1,
+        },
+        (buttonIndex) => {
+          if (buttonIndex < options.length - 1) {
+            options[buttonIndex].onPress();
+          }
+        }
+      );
+    } else {
+      Alert.alert(
+        'Select Image',
+        'Choose an option',
+        options
+      );
+    }
+  };
+
+  const removePhoto = () => {
+    Alert.alert(
+      'Remove Photo',
+      'Are you sure you want to remove this photo?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            updateEditedItem('image_url', '');
+          }
+        }
+      ]
+    );
+  };
+
+  const openCamera = () => {
+    setIsEditModalVisible(false);
+    navigation.navigate('Camera', {
+      onPhotoTaken: (uri) => {
+        // Set local URI first for immediate display
+        setEditedItem(prev => ({
+          ...prev,
+          image_url: uri
+        }));
+        
+        // Then upload and update with the public URL
+        handleImageSelection({ uri });
+        setIsEditModalVisible(true);
+      }
+    });
+  };
+
+  const openImageLibrary = () => {
+    const options = {
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 1000,
+      maxHeight: 1000,
+    };
+
+    launchImageLibrary(options, (response) => {
+      if (response.assets && response.assets[0]) {
+        handleImageSelection(response.assets[0]);
+      }
+    });
+  };
+
+  const handleImageSelection = async (imageAsset) => {
+    setIsUploadingImage(true);
+    try {
+      // First validate the local image
+      if (!imageAsset.uri) {
+        throw new Error('No image selected');
+      }
+
+      // Set a temporary local image for immediate feedback
+      updateEditedItem('image_url', imageAsset.uri);
+
+      const publicUrl = await uploadFoodItemImage(imageAsset.uri);
+      
+      // Delete old image if it exists
+      if (currentItem.image_url && currentItem.image_url !== imageAsset.uri) {
+        await deleteOldFoodImage(currentItem.image_url);
+      }
+
+      // Update with the new public URL
+      updateEditedItem('image_url', publicUrl);
+      
+      Alert.alert('Success', 'Image uploaded successfully!');
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      // Revert to original image on error
+      updateEditedItem('image_url', currentItem.image_url || '');
+      Alert.alert('Error', error.message || 'Failed to upload image. Please try again.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   const handleDelete = (item) => {
     Alert.alert(
       'Delete Item',
@@ -145,6 +378,10 @@ const FoodDetailsScreen = ({ route, navigation }) => {
             }
 
             try {
+              if (item.image_url) {
+                await deleteOldFoodImage(item.image_url);
+              }
+
               const { error } = await supabase
                 .from('pantry_items')
                 .delete()
@@ -181,33 +418,6 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     }
   };
 
-  const handleQuickShare = async (item) => {
-    try {
-      const expirationText = item.expiration_date ? 
-        `Expires: ${formatDate(item.expiration_date)}` : 
-        'No expiration date set';
-      
-      const shareMessage = `🍽️ ${item.item_name} (${item.quantity || '1'} ${item.unit || 'pieces'})
-${expirationText}
-${item.description ? `\n"${item.description}"` : ''}
-
-Shared from my Smart Pantry app!`;
-      
-      const result = await Share.share({
-        message: shareMessage,
-        title: `${item.item_name} from My Pantry`,
-        ...(Platform.OS === 'ios' && { url: 'https://yourapp.com' })
-      });
-
-      if (result.action === Share.sharedAction) {
-        Alert.alert('Success', 'Item shared successfully!');
-      }
-    } catch (error) {
-      console.error('Error sharing:', error);
-      Alert.alert('Error', 'Could not share the item. Please try again.');
-    }
-  };
-
   const handleDiscard = (item) => {
     if (!item.id || !userId) {
       Alert.alert(
@@ -224,8 +434,8 @@ Shared from my Smart Pantry app!`;
     navigation.goBack();
   };
 
-  // Use useCallback to prevent unnecessary re-renders
   const updateEditedItem = useCallback((field, value) => {
+    console.log(`Updating ${field} to:`, value);
     setEditedItem(prev => ({
       ...prev,
       [field]: value
@@ -269,7 +479,8 @@ Shared from my Smart Pantry app!`;
         quantity: editedItem.quantity.trim(),
         quantity_unit: editedItem.unit.trim(),
         expiration_date: editedItem.expiration_date.trim() || null,
-        description: editedItem.description.trim()
+        description: editedItem.description.trim(),
+        image_url: editedItem.image_url.trim() || null
       };
 
       const { error } = await supabase
@@ -280,16 +491,17 @@ Shared from my Smart Pantry app!`;
 
       if (error) throw error;
 
-      setCurrentItem({
+      const newCurrentItem = {
         ...currentItem,
         ...updatedItem
-      });
+      };
+      setCurrentItem(newCurrentItem);
       
-setIsEditModalVisible(false);
+      setIsEditModalVisible(false);
 
-setTimeout(() => {
-  Alert.alert('Success', 'Item updated successfully!');
-}, 300);
+      setTimeout(() => {
+        Alert.alert('Success', 'Item updated successfully!');
+      }, 300);
 
     } catch (error) {
       console.error('Error updating item:', error);
@@ -345,330 +557,508 @@ setTimeout(() => {
   );
 
   const EditModal = () => (
-  <Modal
-    visible={isEditModalVisible}
-    animationType="slide"
-    transparent={false}
-  >
-    <SafeAreaView style={styles.modalContainer}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={{ flex: 1 }}>
-            
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setIsEditModalVisible(false)} disabled={isSaving}>
-                <Text style={[styles.modalCancelButton, isSaving && { opacity: 0.5 }]}>Cancel</Text>
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Edit Item</Text>
-              <TouchableOpacity onPress={handleSaveEdit} disabled={isSaving}>
-                <Text style={[styles.modalSaveButton, isSaving && { opacity: 0.5 }]}>
-                  {isSaving ? 'Saving...' : 'Save'}
-                </Text>
+    <Modal
+      visible={isEditModalVisible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={() => setIsEditModalVisible(false)}
+    >
+      <SafeAreaView style={styles.modalContainer}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardAvoidingView}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsEditModalVisible(false)} disabled={isSaving}>
+              <Text style={[styles.modalCancelButton, isSaving && { opacity: 0.5 }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Edit Item</Text>
+            <TouchableOpacity onPress={handleSaveEdit} disabled={isSaving}>
+              <Text style={[styles.modalSaveButton, isSaving && { opacity: 0.5 }]}>
+                {isSaving ? 'Saving...' : 'Save'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView 
+            ref={scrollViewRef}
+            contentContainerStyle={styles.modalContent} 
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Improved Image Section */}
+            <View style={styles.imageEditSection}>
+              <TouchableOpacity 
+                style={styles.imageEditContainer}
+                onPress={handleImagePicker}
+                disabled={isUploadingImage}
+              >
+                <ImageWithFallback
+                  imageUrl={editedItem.image_url}
+                  localImage={localImage}
+                  itemName={editedItem.item_name}
+                  style={styles.editImage}
+                  onImageError={() => {
+                    updateEditedItem('image_url', '');
+                  }}
+                  resizeMode="cover"
+                />
+                
+                {/* Overlay for adding/changing image */}
+                <View style={styles.imageEditOverlay}>
+                  <Text style={styles.editImageIcon}>📷</Text>
+                  <Text style={styles.editImageText}>
+                    {isUploadingImage ? 'Uploading...' : editedItem.image_url ? 'Change Photo' : 'Add Photo'}
+                  </Text>
+                </View>
+                
+                {isUploadingImage && (
+                  <View style={styles.uploadingOverlay}>
+                    <Text style={styles.uploadingText}>Uploading...</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-              {/* Form Inputs */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Item Name</Text>
+            {/* Form Inputs */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Item Name</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editedItem.item_name}
+                onChangeText={(text) => updateEditedItem('item_name', text)}
+                placeholder="Enter item name"
+                autoCapitalize="words"
+                returnKeyType="next"
+                onSubmitEditing={() => quantityInputRef.current?.focus()}
+              />
+            </View>
+
+            <View style={styles.inputRow}>
+              <View style={[styles.inputGroup, styles.inputGroupHalf]}>
+                <Text style={styles.inputLabel}>Quantity</Text>
                 <TextInput
+                  ref={quantityInputRef}
                   style={styles.textInput}
-                  value={editedItem.item_name}
-                  onChangeText={(text) => updateEditedItem('item_name', text)}
-                  placeholder="Enter item name"
-                  autoCapitalize="words"
+                  value={editedItem.quantity}
+                  onChangeText={(text) => updateEditedItem('quantity', text)}
+                  placeholder="1"
+                  keyboardType="numeric"
                   returnKeyType="next"
-                  onSubmitEditing={() => quantityInputRef.current?.focus()}
+                  onSubmitEditing={() => expirationInputRef.current?.focus()}
                 />
               </View>
 
-              <View style={styles.inputRow}>
-                <View style={[styles.inputGroup, styles.inputGroupHalf]}>
-                  <Text style={styles.inputLabel}>Quantity</Text>
-                  <TextInput
-                    ref={quantityInputRef}
-                    style={styles.textInput}
-                    value={editedItem.quantity}
-                    onChangeText={(text) => updateEditedItem('quantity', text)}
-                    placeholder="1"
-                    keyboardType="numeric"
-                    returnKeyType="next"
-                    onSubmitEditing={() => expirationInputRef.current?.focus()}
-                  />
-                </View>
-
-                <View style={[styles.inputGroup, styles.inputGroupHalf]}>
-                  <Text style={styles.inputLabel}>Unit</Text>
-                  <TouchableOpacity
-                    style={[styles.textInput, styles.unitSelector]}
-                    onPress={() => setIsUnitDropdownVisible(true)}
-                  >
-                    <Text style={styles.unitSelectorText}>{editedItem.unit}</Text>
-                    <Text style={styles.unitSelectorArrow}>▼</Text>
-                  </TouchableOpacity>
-                </View>
+              <View style={[styles.inputGroup, styles.inputGroupHalf]}>
+                <Text style={styles.inputLabel}>Unit</Text>
+                <TouchableOpacity
+                  style={[styles.textInput, styles.unitSelector]}
+                  onPress={() => setIsUnitDropdownVisible(true)}
+                >
+                  <Text style={styles.unitSelectorText}>{editedItem.unit}</Text>
+                  <Text style={styles.unitSelectorArrow}>▼</Text>
+                </TouchableOpacity>
               </View>
+            </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Expiration Date</Text>
-                <TextInput
-                  ref={expirationInputRef}
-                  style={styles.textInput}
-                  value={editedItem.expiration_date}
-                  onChangeText={(text) => updateEditedItem('expiration_date', text)}
-                  placeholder="YYYY-MM-DD"
-                  returnKeyType="next"
-                  onSubmitEditing={() => descriptionInputRef.current?.focus()}
-                />
-                <Text style={styles.inputHint}>Format: YYYY-MM-DD</Text>
-              </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Expiration Date</Text>
+              <TextInput
+                ref={expirationInputRef}
+                style={styles.textInput}
+                value={editedItem.expiration_date}
+                onChangeText={(text) => updateEditedItem('expiration_date', text)}
+                placeholder="YYYY-MM-DD"
+                returnKeyType="next"
+                onSubmitEditing={() => descriptionInputRef.current?.focus()}
+              />
+              <Text style={styles.inputHint}>Format: YYYY-MM-DD</Text>
+            </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description</Text>
-                <TextInput
-                  ref={descriptionInputRef}
-                  style={[styles.textInput, styles.textInputMultiline]}
-                  value={editedItem.description}
-                  onChangeText={(text) => updateEditedItem('description', text)}
-                  placeholder="Optional description"
-                  multiline
-                  numberOfLines={4}
-                  textAlignVertical="top"
-                />
-              </View>
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Description</Text>
+              <TextInput
+                ref={descriptionInputRef}
+                style={[styles.textInput, styles.textInputMultiline]}
+                value={editedItem.description}
+                onChangeText={(text) => updateEditedItem('description', text)}
+                placeholder="Optional description"
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+                onFocus={() => {
+                  setTimeout(() => {
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                  }, 100);
+                }}
+              />
+            </View>
 
-            </ScrollView>
+            {/* Extra space for keyboard */}
+            <View style={{ height: 100 }} />
+          </ScrollView>
 
-            {isUnitDropdownVisible && <UnitDropdown />}
-          </View>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  </Modal>
-);
-
+          {isUnitDropdownVisible && <UnitDropdown />}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
 
   return (
-    <SafeAreaView style={styles.detailsContainer}>
-      <ScrollView>
-        <View style={styles.detailsImageContainer}>
-          {hasUserImage ? (
-            <Image 
-              source={{ uri: currentItem.image_url }} 
-              style={styles.detailsImage}
-              resizeMode="cover"
-            />
-          ) : localImage ? (
-            <Image 
-              source={localImage} 
-              style={styles.detailsImage}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.defaultImageContainer}>
-              <Text style={styles.detailsFoodIcon}>{getItemEmoji(currentItem.item_name)}</Text>
+    <ErrorBoundary>
+      <View style={styles.container}>
+        <SafeAreaView style={styles.safeArea}>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={styles.backButtonText}>‹</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.bookmarkButton}
+              onPress={() => setIsEditModalVisible(true)}
+            >
+              <Text style={styles.bookmarkButtonText}>✏️</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Improved Image Section */}
+          <View style={styles.imageSection}>
+            <View style={styles.imageContainer}>
+              <ImageWithFallback
+                imageUrl={currentItem.image_url}
+                localImage={localImage}
+                itemName={currentItem.item_name}
+                style={styles.foodImage}
+                onImageError={() => {
+                  setCurrentItem(prev => ({
+                    ...prev,
+                    image_url: ''
+                  }));
+                }}
+                resizeMode="cover"
+              />
             </View>
-          )}
-        </View>
+          </View>
 
-        <View style={styles.detailsContent}>
-          <Text style={styles.detailsName}>{currentItem.item_name}</Text>
-          
-          <View style={styles.detailsMeta}>
-            <Text style={styles.detailsQuantity}>
-              {currentItem.quantity || '1'} {currentItem.quantity_unit || 'pieces'}
-            </Text>
-            <Text style={styles.detailsExpiration}>
-              Expires: {formatDate(currentItem.expiration_date) || 'Not set'}
-            </Text>
+          {/* Status Badge */}
+          <View style={styles.statusBadge}>
+            <View style={[
+              styles.statusDot,
+              isExpired && styles.statusDotExpired,
+              isExpiring && styles.statusDotExpiring
+            ]} />
           </View>
-          
-          <Text style={styles.detailsDescription}>
-            {currentItem.description || 'No description available.'}
-          </Text>
-          
-          <View style={styles.detailsInfoRow}>
-            <Text style={[
-              styles.detailsStatus,
-              isExpired && styles.statusExpired,
-              isExpiring && styles.statusExpiring
-            ]}>
-              {isExpired ? 'Expired' : isExpiring ? 'Expiring Soon' : 'Fresh'}
-            </Text>
+
+          {/* Content */}
+          <View style={styles.content}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.titleSection}>
+                <Text style={styles.title}>{currentItem.item_name}</Text>
+                <View style={styles.ratingContainer}>
+                  <Text style={styles.rating}>★ 4.5</Text>
+                  <Text style={styles.ratingCount}>({currentItem.quantity || '1'} {currentItem.quantity_unit || 'pieces'})</Text>
+                </View>
+              </View>
+
+              <Text style={styles.subtitle}>Details</Text>
+              <Text style={styles.description}>
+                {currentItem.description || 'A fresh ingredient for your meals.'}
+              </Text>
+
+              {/* Info Icons */}
+              <View style={styles.infoRow}>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoIcon}>📦</Text>
+                  <Text style={styles.infoText}>{currentItem.quantity || '1'} {currentItem.quantity_unit || 'pieces'}</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoIcon}>📅</Text>
+                  <Text style={styles.infoText}>{formatDate(currentItem.expiration_date) || 'No expiry'}</Text>
+                </View>
+                <View style={styles.infoItem}>
+                  <Text style={styles.infoIcon}>
+                    {isExpired ? '⚠️' : isExpiring ? '⏰' : '✅'}
+                  </Text>
+                  <Text style={[
+                    styles.infoText,
+                    isExpired && { color: '#F44336' },
+                    isExpiring && { color: '#FFA000' }
+                  ]}>
+                    {isExpired ? 'Expired' : isExpiring ? 'Expiring' : 'Fresh'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.actionButtons}>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => handleShare(currentItem)}
+                >
+                  <Text style={styles.actionButtonText}>Share</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => handleDiscard(currentItem)}
+                >
+                  <Text style={styles.actionButtonText}>Discard</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.actionButton, styles.deleteButton]}
+                  onPress={() => handleDelete(currentItem)}
+                >
+                  <Text style={[styles.actionButtonText, styles.deleteButtonText]}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
-          
-          <TouchableOpacity 
-            style={[
-              styles.editButton,
-              isExpired && styles.editButtonExpired,
-              isExpiring && styles.editButtonExpiring
-            ]}
-            onPress={() => setIsEditModalVisible(true)}
-          >
-            <Text style={styles.editButtonText}>✏️ Edit Item</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-      
-      <View style={styles.detailsActions}>
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleDelete(currentItem)}
-        >
-          <Text style={styles.actionIcon}>🗑️</Text>
-          <Text style={styles.actionText}>Delete</Text>
-        </TouchableOpacity>
+        </SafeAreaView>
+
+        <EditModal />
         
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleShare(currentItem)}
-        >
-          <Text style={styles.actionIcon}>📤</Text>
-          <Text style={styles.actionText}>Share</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton}
-          onPress={() => handleDiscard(currentItem)}
-        >
-          <Text style={styles.actionIcon}>♻️</Text>
-          <Text style={styles.actionText}>Discard</Text>
-        </TouchableOpacity>
+        {userId && currentItem?.id && (
+          <DiscardItemModal
+            visible={isDiscardModalVisible}
+            onClose={() => setIsDiscardModalVisible(false)}
+            itemId={currentItem.id}
+            userId={userId}
+            onDiscardComplete={handleDiscardComplete}
+          />
+        )}
       </View>
-
-      <EditModal />
-      
-      {userId && currentItem?.id && (
-        <DiscardItemModal
-          visible={isDiscardModalVisible}
-          onClose={() => setIsDiscardModalVisible(false)}
-          itemId={currentItem.id}
-          userId={userId}
-          onDiscardComplete={handleDiscardComplete}
-        />
-      )}
-    </SafeAreaView>
+    </ErrorBoundary>
   );
 };
 
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('FoodDetails error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text>Something went wrong. Please try again.</Text>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 const styles = StyleSheet.create({
-  detailsContainer: {
+  container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa',
   },
-  detailsImageContainer: {
-    width: '100%',
-    height: 250,
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'center',
-    alignItems: 'center',
+  safeArea: {
+    flex: 1,
   },
-  detailsImage: {
-    width: '100%',
-    height: '100%',
-  },
-  defaultImageContainer: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f0f0',
-  },
-  detailsFoodIcon: {
-    fontSize: 100,
-  },
-  detailsContent: {
-    padding: 20,
-  },
-  detailsName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 10,
-  },
-  detailsMeta: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  detailsQuantity: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '600',
-  },
-  detailsExpiration: {
-    fontSize: 14,
-    color: '#666',
-  },
-  detailsDescription: {
-    fontSize: 14,
-    color: '#555',
-    lineHeight: 22,
-    marginBottom: 25,
-  },
-  detailsInfoRow: {
-    marginBottom: 30,
-  },
-  detailsStatus: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#4CAF50',
-    textAlign: 'center',
-    padding: 10,
-    backgroundColor: '#E8F5E8',
-    borderRadius: 8,
-  },
-  statusExpiring: {
-    color: '#FFA000',
-    backgroundColor: '#FFF3E0',
-  },
-  statusExpired: {
-    color: '#F44336',
-    backgroundColor: '#FFEBEE',
-  },
-  editButton: {
-    backgroundColor: '#2196F3',
-    paddingVertical: 15,
-    borderRadius: 10,
     alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    zIndex: 10,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  backButtonText: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#333',
+  },
+  bookmarkButton: {
+    width: 40,
+    height: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bookmarkButtonText: {
+    fontSize: 18,
+    color: '#333',
+  },
+  imageSection: {
+    alignItems: 'center',
+    marginTop: -10,
     marginBottom: 20,
   },
-  editButtonExpiring: {
+  imageContainer: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  foodImage: {
+    width: '100%',
+    height: '100%',
+  },
+  statusBadge: {
+    position: 'absolute',
+    right: width * 0.3,
+    top: height * 0.25,
+    zIndex: 10,
+  },
+  statusDot: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#4CAF50',
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  statusDotExpiring: {
     backgroundColor: '#FFA000',
   },
-  editButtonExpired: {
+  statusDotExpired: {
     backgroundColor: '#F44336',
   },
-  editButtonText: {
-    color: '#fff',
+  content: {
+    flex: 1,
+    backgroundColor: '#fff',
+    marginTop: 10,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 25,
+    paddingTop: 30,
+  },
+  titleSection: {
+    marginBottom: 25,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginBottom: 8,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  rating: {
     fontSize: 16,
+    color: '#ff6b35',
     fontWeight: '600',
   },
-  detailsActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  actionButton: {
-    alignItems: 'center',
-    padding: 10,
-  },
-  actionIcon: {
-    fontSize: 20,
-    marginBottom: 5,
-  },
-  actionText: {
-    fontSize: 12,
+  ratingCount: {
+    fontSize: 14,
     color: '#666',
   },
+  subtitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    marginBottom: 12,
+  },
+  description: {
+    fontSize: 15,
+    color: '#666',
+    lineHeight: 22,
+    marginBottom: 35,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 40,
+    paddingHorizontal: 10,
+  },
+  infoItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  infoIcon: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 30,
+  },
+  actionButton: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 15,
+    paddingVertical: 15,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  actionButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333',
+  },
+  deleteButton: {
+    backgroundColor: '#ffebee',
+  },
+  deleteButtonText: {
+    color: '#f44336',
+  },
+  // Modal styles
   modalContainer: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -676,63 +1066,110 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#e0e0e0',
+  },
+  modalCancelButton: {
+    fontSize: 16,
+    color: '#666',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
   },
-  modalCancelButton: {
-    fontSize: 16,
-    color: '#666',
-  },
   modalSaveButton: {
     fontSize: 16,
-    color: '#2196F3',
     fontWeight: '600',
+    color: '#4CAF50',
   },
   modalContent: {
-    flex: 1,
     padding: 20,
+    paddingBottom: 50,
+  },
+  imageEditSection: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  imageEditContainer: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  editImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageEditOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  editImageIcon: {
+    fontSize: 20,
+    marginBottom: 2,
+  },
+  editImageText: {
+    fontSize: 10,
+    color: '#fff',
+  },
+  uploadingOverlay: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadingText: {
+    color: '#fff',
+    fontSize: 14,
   },
   inputGroup: {
     marginBottom: 20,
   },
-  inputGroupHalf: {
-    width: '48%',
-  },
   inputRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 15,
+  },
+  inputGroupHalf: {
+    flex: 1,
   },
   inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 14,
+    color: '#666',
     marginBottom: 8,
+    fontWeight: '500',
   },
   textInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 10,
+    padding: 15,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    color: '#333',
   },
   textInputMultiline: {
-    height: 100,
+    minHeight: 100,
     textAlignVertical: 'top',
   },
   inputHint: {
     fontSize: 12,
-    color: '#666',
-    marginTop: 4,
+    color: '#999',
+    marginTop: 5,
   },
   unitSelector: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingRight: 15,
   },
   unitSelectorText: {
     fontSize: 16,
@@ -742,40 +1179,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
   },
+  // Dropdown styles
   dropdownOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   dropdownContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    maxHeight: 300,
     width: '80%',
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    maxHeight: '60%',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   dropdownScrollView: {
-    maxHeight: 300,
+    maxHeight: '100%',
   },
   dropdownItem: {
-    padding: 15,
+    paddingVertical: 15,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#f0f0f0',
   },
   dropdownItemSelected: {
-    backgroundColor: '#E3F2FD',
+    backgroundColor: '#f5f5f5',
   },
   dropdownItemText: {
     fontSize: 16,
     color: '#333',
   },
   dropdownItemTextSelected: {
-    color: '#2196F3',
+    color: '#4CAF50',
     fontWeight: '600',
   },
 });

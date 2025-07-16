@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,18 +17,13 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   Dimensions,
-  ScrollView,
   Image
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import DiscardItemModal from './DiscardItemModal';
 import { supabase } from '../lib/supabase';
 
-const { width } = Dimensions.get('window');
-
-// Food images mapping - replace with your actual image sources
 const image_url = {
-  'apple': require('../assets/images/apple.png'), // Replace with actual paths
+  'apple': require('../assets/images/apple.png'),
   'banana': require('../assets/images/banana.png'),
   'bread': require('../assets/images/bread.png'),
   'milk': require('../assets/images/milk.png'),
@@ -42,7 +37,6 @@ const image_url = {
   'rice': require('../assets/images/rice.png'),
   'pasta': require('../assets/images/pasta.png'),
   'avocado': require('../assets/images/avocado.png'),
-  // Add more mappings as needed
 };
 
 export default function PantryScreen({ navigation }) {
@@ -53,7 +47,6 @@ export default function PantryScreen({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Edit Modal State
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editForm, setEditForm] = useState({
     id: null,
@@ -61,14 +54,10 @@ export default function PantryScreen({ navigation }) {
     quantity: '',
     expiration_date: '',
   });
-
-  // Share Modal State
   const [shareModalVisible, setShareModalVisible] = useState(false);
   const [selectedItemForShare, setSelectedItemForShare] = useState(null);
-
   const [discardModalVisible, setDiscardModalVisible] = useState(false);
   const [selectedItemForDiscard, setSelectedItemForDiscard] = useState(null);
-
   const [discardStats, setDiscardStats] = useState([]);
 
   useEffect(() => {
@@ -81,7 +70,6 @@ export default function PantryScreen({ navigation }) {
     }, [])
   );
 
-  // Filter items based on search query
   useEffect(() => {
     if (searchQuery.trim() === '') {
       setFilteredItems(pantryItems);
@@ -99,7 +87,6 @@ export default function PantryScreen({ navigation }) {
       setCurrentUser(user);
       if (user) {
         await fetchPantryItems();
-        await fetchDiscardedItemsStats();
       }
     } catch (error) {
       console.error('Error initializing screen:', error);
@@ -132,7 +119,14 @@ export default function PantryScreen({ navigation }) {
           ? data.filter(item => item && item.item_name)
           : [];
         setPantryItems(validItems);
-        setFilteredItems(validItems);
+        if (searchQuery.trim() !== '') {
+          const filtered = validItems.filter(item =>
+            item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
+          );
+          setFilteredItems(filtered);
+        } else {
+          setFilteredItems(validItems);
+        }
       }
     } catch (err) {
       console.error('Unexpected error:', err);
@@ -147,194 +141,14 @@ export default function PantryScreen({ navigation }) {
   const onRefresh = useCallback(() => {
     setRefreshing(true);
     fetchPantryItems();
-  }, []);
+  }, [searchQuery]);
 
-  const handleDelete = (item) => {
-    Alert.alert(
-      "Delete Item",
-      `Are you sure you want to delete "${item.item_name}"?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteItem(item.id),
-        },
-      ]
-    );
-  };
-
-  const deleteItem = async (itemId) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) {
-        Alert.alert("Error", "User not authenticated");
-        return;
-      }
-
-      const { error } = await supabase
-        .from('pantry_items')
-        .delete()
-        .eq('id', itemId)
-        .eq('user_id', user.id);
-
-      if (error) {
-        Alert.alert("Error", `Failed to delete item: ${error.message}`);
-      } else {
-        Alert.alert("Success", "Item deleted successfully");
-        await fetchPantryItems();
-      }
-    } catch (err) {
-      console.error('Delete error:', err);
-      Alert.alert("Error", "An unexpected error occurred.");
-    }
-  };
-
-  const fetchDiscardedItemsStats = async () => {
-    if (!currentUser?.id) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('discarded_items')
-        .select('reason, timestamp, item_name, quantity')
-        .eq('user_id', currentUser.id)
-        .order('timestamp', { ascending: false });
-
-      if (error) {
-        console.error('Discard fetch error:', error.message);
-        setDiscardStats([]);
-      } else {
-        setDiscardStats(data || []);
-      }
-    } catch (err) {
-      console.error('Unexpected error fetching discard stats:', err);
-      setDiscardStats([]);
-    }
-  };
-
-  const handleDiscard = (item) => {
-    setSelectedItemForDiscard(item);
-    setDiscardModalVisible(true);
-  };
-
-  const handleEdit = (item) => {
-    setEditForm({
-      id: item.id,
-      item_name: item.item_name || '',
-      quantity: String(item.quantity || ''),
-      expiration_date: item.expiration_date || '',
+  const navigateToFoodDetails = (item) => {
+    navigation.navigate('FoodDetails', {
+      foodItem: item,
+      expirationStatus: getExpirationStatus(item.expiration_date)
     });
-    setEditModalVisible(true);
   };
-
-  const cancelEdit = () => {
-    setEditModalVisible(false);
-    setEditForm({ id: null, item_name: '', quantity: '', expiration_date: '' });
-  };
-
-  const saveEdit = async () => {
-    if (!editForm.item_name.trim() || !editForm.quantity.trim() || !editForm.expiration_date.trim()) {
-      Alert.alert("Missing Fields", "Please fill in all fields.");
-      return;
-    }
-
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(editForm.expiration_date)) {
-      Alert.alert("Invalid Date", "Please use YYYY-MM-DD format for the expiration date.");
-      return;
-    }
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) {
-        Alert.alert("Error", "User not authenticated");
-        return;
-      }
-
-      const updateData = {
-        item_name: editForm.item_name.trim(),
-        quantity: parseInt(editForm.quantity) || 0,
-        expiration_date: editForm.expiration_date,
-      };
-
-      const { error } = await supabase
-        .from('pantry_items')
-        .update(updateData)
-        .eq('id', editForm.id)
-        .eq('user_id', user.id);
-
-      if (error) {
-        Alert.alert("Error", `Failed to update item: ${error.message}`);
-      } else {
-        Alert.alert("Success", "Item updated successfully");
-        await fetchPantryItems();
-        cancelEdit();
-      }
-    } catch (err) {
-      console.error('Update error:', err);
-      Alert.alert("Error", "An unexpected error occurred.");
-    }
-  };
-
-  const handleShare = (item) => {
-    setSelectedItemForShare(item);
-    setShareModalVisible(true);
-  };
-
-  const shareItem = async () => {
-    if (!currentUser || !selectedItemForShare) return;
-    
-    try {
-      const { data: existingShare, error: checkError } = await supabase
-        .from('shared_items')
-        .select('id')
-        .eq('item_id', selectedItemForShare.id)
-        .eq('user_id', currentUser.id)
-        .single();
-
-      if (checkError && checkError.code !== 'PGRST116') {
-        throw checkError;
-      }
-
-      if (existingShare) {
-        Alert.alert("Already Shared", "This item is already being shared.");
-        setShareModalVisible(false);
-        return;
-      }
-
-      const { error } = await supabase
-        .from('shared_items')
-        .insert({
-          item_id: selectedItemForShare.id,
-          user_id: currentUser.id,
-          status: 'available',
-          offered_at: new Date().toISOString()
-        });
-
-      if (error) {
-        Alert.alert('Error', `Failed to share item: ${error.message}`);
-      } else {
-        Alert.alert('Success', 'Item shared with your neighbors!');
-        setShareModalVisible(false);
-        setSelectedItemForShare(null);
-      }
-    } catch (err) {
-      console.error('Share error:', err);
-      Alert.alert('Error', 'An unexpected error occurred while sharing the item.');
-    }
-  };
-
-  const cancelShare = () => {
-    setShareModalVisible(false);
-    setSelectedItemForShare(null);
-  };
-
- const navigateToFoodDetails = (item) => {
-  navigation.navigate('FoodDetails', { 
-    foodItem: item,
-    expirationStatus: getExpirationStatus(item.expiration_date)
-  });
-};
 
   const getExpirationStatus = (dateString) => {
     try {
@@ -342,7 +156,7 @@ export default function PantryScreen({ navigation }) {
       const today = new Date();
       const diffTime = expiration - today;
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
+
       if (diffDays < 0) return { status: 'expired', days: Math.abs(diffDays) };
       if (diffDays <= 3) return { status: 'expiring', days: diffDays };
       return { status: 'fresh', days: diffDays };
@@ -393,7 +207,7 @@ export default function PantryScreen({ navigation }) {
     const calories = ['150 kcal', '200 kcal', '245 kcal', '300 kcal', '350 kcal'];
     const ratings = ['4.2', '4.5', '4.7', '4.8', '4.9'];
     const distances = ['1.2 km', '2.5 km', '3.6 km', '4.1 km', '5.0 km'];
-    
+
     return {
       prep_time: prepTimes[Math.floor(Math.random() * prepTimes.length)],
       calories: calories[Math.floor(Math.random() * calories.length)],
@@ -407,20 +221,16 @@ export default function PantryScreen({ navigation }) {
     const expirationStatus = getExpirationStatus(item.expiration_date);
     const isExpired = expirationStatus.status === 'expired';
     const isExpiring = expirationStatus.status === 'expiring';
-    
-    // Check if image exists for this item (case-insensitive)
-    const hasCustomImage = item.image_url && item.image_url.trim() !== '';
 
-const itemKey = Object.keys(image_url).find(key => 
-  key.toLowerCase() === item.item_name.toLowerCase()
-);
-const hasDefaultImage = itemKey && image_url[itemKey];
+    const itemKey = Object.keys(image_url).find(key =>
+      key.toLowerCase() === item.item_name.toLowerCase()
+    );
+    const hasDefaultImage = itemKey && image_url[itemKey];
 
-    
     const foodData = generateRandomFoodData(item);
-    
+
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[
           styles.gridItem,
           isExpired && styles.gridItemExpired,
@@ -430,45 +240,39 @@ const hasDefaultImage = itemKey && image_url[itemKey];
         activeOpacity={0.7}
       >
         <View style={styles.gridItemContent}>
-          {/* Food Image or Icon */}
           <View style={styles.foodImageContainer}>
-  {hasCustomImage ? (
-    <Image 
-      source={{ uri: item.image_url }} 
-      style={styles.foodImage}
-      resizeMode="cover"
-    />
-  ) : hasDefaultImage ? (
-    <Image 
-      source={image_url[itemKey]} 
-      style={styles.foodImage}
-      resizeMode="cover"
-    />
-  ) : (
-    <View style={styles.iconContainer}>
-      <Text style={styles.foodIcon}>{getItemEmoji(item.item_name)}</Text>
-    </View>
-  )}
-</View>
+            {item.image_url ? (
+              <Image
+                source={{ uri: item.image_url }}
+                style={styles.foodImage}
+                resizeMode="cover"
+              />
+            ) : hasDefaultImage ? (
+              <Image
+                source={image_url[itemKey]}
+                style={styles.foodImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.iconContainer}>
+                <Text style={styles.foodIcon}>{getItemEmoji(item.item_name)}</Text>
+              </View>
+            )}
+          </View>
 
-          
-          {/* Food Name */}
           <Text style={styles.itemName} numberOfLines={1}>
             {item.item_name}
           </Text>
-          
-          {/* Prep Time and Calories */}
+
           <View style={styles.foodDetails}>
             <Text style={styles.detailText}>{foodData.prep_time}</Text>
             <Text style={styles.detailText}>{foodData.calories}</Text>
           </View>
-          
-          {/* Rating */}
+
           <View style={styles.ratingContainer}>
             <Text style={styles.ratingText}>⭐ {foodData.rating}</Text>
           </View>
-          
-          {/* Status Badge */}
+
           {isExpired && (
             <View style={[styles.statusBadge, styles.expiredBadge]}>
               <Text style={styles.statusText}>EXPIRED</Text>
@@ -487,7 +291,7 @@ const hasDefaultImage = itemKey && image_url[itemKey];
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyIcon}>🍽️</Text>
-      <Text style={styles.emptyTitle}>No dishes available</Text>
+      <Text style={styles.emptyTitle}>Empty</Text>
       <Text style={styles.emptyText}>Start adding food items to see available dishes</Text>
       <TouchableOpacity
         style={styles.addButton}
@@ -506,6 +310,57 @@ const hasDefaultImage = itemKey && image_url[itemKey];
     </View>
   );
 
+  const renderHeader = () => (
+  <>
+    {/* Popular Dishes Section */}
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Popular meals</Text>
+      </View>
+
+      {filteredItems.length > 0 ? (
+        <FlatList
+          horizontal
+          data={filteredItems.slice(0, 4)}
+          keyExtractor={(item) => `popular-${item.id}`}
+          renderItem={renderGridItem}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+        />
+      ) : (
+        searchQuery.length > 0 && renderNoResults()
+      )}
+    </View>
+
+    {/* Recipe of the Week Section */}
+    {filteredItems.length > 4 && (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Meal of the week</Text>
+        </View>
+
+        <FlatList
+          horizontal
+          data={filteredItems.slice(4, 8)}
+          keyExtractor={(item) => `recipe-${item.id}`}
+          renderItem={renderGridItem}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.horizontalList}
+        />
+      </View>
+    )}
+
+    {/* All Available Dishes Heading */}
+    {filteredItems.length > 0 && (
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>All Available meals</Text>
+        </View>
+      </View>
+    )}
+  </>
+);
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -521,10 +376,9 @@ const hasDefaultImage = itemKey && image_url[itemKey];
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
-      
-      {/* Header with greeting and search */}
+
+      {/* Header with search */}
       <View style={styles.headerContainer}>
-        
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
@@ -544,68 +398,31 @@ const hasDefaultImage = itemKey && image_url[itemKey];
           )}
         </View>
       </View>
-      
+
       {/* Main content */}
-      {filteredItems.length === 0 ? (
-        renderEmptyState()
-      ) : (
-        <ScrollView 
-          style={styles.contentContainer}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={['#4CAF50']}
-              tintColor="#4CAF50"
-            />
-          }
-        >
-          {/* Popular Dishes Section */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Popular dishes</Text>
-              <TouchableOpacity>
-                <Text style={styles.viewAllText}>View All</Text>
-              </TouchableOpacity>
-            </View>
-            
-            {filteredItems.length > 0 ? (
-              <FlatList
-                horizontal
-                data={filteredItems.slice(0, 4)}
-                keyExtractor={(item) => `popular-${item.id}`}
-                renderItem={renderGridItem}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalList}
-              />
-            ) : (
-              searchQuery.length > 0 && renderNoResults()
-            )}
-          </View>
-          
-          {/* Recipe of the Week Section */}
-          {filteredItems.length > 4 && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recipe of the week</Text>
-                <TouchableOpacity>
-                  <Text style={styles.viewAllText}>View All</Text>
-                </TouchableOpacity>
-              </View>
-              
-              <FlatList
-                horizontal
-                data={filteredItems.slice(4, 8)}
-                keyExtractor={(item) => `recipe-${item.id}`}
-                renderItem={renderGridItem}
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.horizontalList}
-              />
-            </View>
-          )}
-        </ScrollView>
-      )}
-      
+      <FlatList
+  ListHeaderComponent={renderHeader}
+  data={filteredItems.length > 0 ? filteredItems : []}
+  keyExtractor={(item) => `all-${item.id}`}
+  renderItem={renderGridItem}
+  numColumns={2}
+  columnWrapperStyle={styles.row}
+  contentContainerStyle={styles.gridList}
+  refreshControl={
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      colors={['#4CAF50']}
+      tintColor="#4CAF50"
+    />
+  }
+  ListEmptyComponent={
+    filteredItems.length === 0 && searchQuery.trim() === '' 
+      ? renderEmptyState() 
+      : null
+  }
+/>
+
       {/* Floating Action Button */}
       <TouchableOpacity
         style={styles.fab}
@@ -614,132 +431,6 @@ const hasDefaultImage = itemKey && image_url[itemKey];
       >
         <Text style={styles.fabText}>+</Text>
       </TouchableOpacity>
-
-      {/* Discard Modal */}
-      <DiscardItemModal
-        visible={discardModalVisible}
-        onClose={() => {
-          setDiscardModalVisible(false);
-          setSelectedItemForDiscard(null);
-        }}
-        itemId={selectedItemForDiscard?.id}
-        userId={currentUser?.id}
-        onDiscardComplete={() => {
-          fetchPantryItems();
-          fetchDiscardedItemsStats();
-          setDiscardModalVisible(false);
-          setSelectedItemForDiscard(null);
-        }}
-      />
-
-      {/* Edit Modal */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={editModalVisible}
-        onRequestClose={cancelEdit}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalKeyboardAvoidingView}
-        >
-          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Edit Dish</Text>
-                  <TouchableOpacity onPress={cancelEdit} style={styles.closeButton}>
-                    <Text style={styles.closeButtonText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.formContainer}>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Dish Name</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={editForm.item_name}
-                      onChangeText={(text) => setEditForm(prev => ({ ...prev, item_name: text }))}
-                      placeholder="Enter dish name"
-                      placeholderTextColor="#999"
-                    />
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Quantity</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={editForm.quantity}
-                      keyboardType="numeric"
-                      onChangeText={(text) => setEditForm(prev => ({ ...prev, quantity: text }))}
-                      placeholder="Enter quantity"
-                      placeholderTextColor="#999"
-                    />
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Expiration Date</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={editForm.expiration_date}
-                      onChangeText={(text) => setEditForm(prev => ({ ...prev, expiration_date: text }))}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#999"
-                    />
-                  </View>
-                </View>
-
-                <TouchableOpacity style={styles.saveButton} onPress={saveEdit}>
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableWithoutFeedback>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* Share Modal */}
-      <Modal
-        animationType="slide"
-        transparent
-        visible={shareModalVisible}
-        onRequestClose={cancelShare}
-      >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Share Dish</Text>
-                <TouchableOpacity onPress={cancelShare} style={styles.closeButton}>
-                  <Text style={styles.closeButtonText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-              
-              {selectedItemForShare && (
-                <View style={styles.sharePreview}>
-                  <Text style={styles.sharePreviewEmoji}>
-                    {getItemEmoji(selectedItemForShare.item_name)}
-                  </Text>
-                  <Text style={styles.sharePreviewName}>
-                    {selectedItemForShare.item_name}
-                  </Text>
-                  <Text style={styles.sharePreviewDetails}>
-                    Qty: {selectedItemForShare.quantity} • Expires: {formatDate(selectedItemForShare.expiration_date)}
-                  </Text>
-                </View>
-              )}
-
-              <Text style={styles.shareDescription}>
-                Share this dish with your neighbors. They'll be able to see and request it.
-              </Text>
-
-              <TouchableOpacity style={styles.shareButton} onPress={shareItem}>
-                <Text style={styles.shareButtonText}>📤 Share with Neighbors</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -766,21 +457,9 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 10,
   },
-  
-  // Header styles
   headerContainer: {
     padding: 20,
     paddingBottom: 10,
-  },
-  greeting: {
-    fontSize: 16,
-    color: '#666',
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 20,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -812,8 +491,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#999',
   },
-  
-  // Section styles
   section: {
     marginBottom: 25,
   },
@@ -838,13 +515,18 @@ const styles = StyleSheet.create({
     paddingLeft: 20,
     paddingRight: 10,
   },
-  
-  // Grid item styles
+  gridList: {
+    paddingHorizontal: 10,
+  },
+  row: {
+    justifyContent: 'space-around',
+    marginBottom: 15,
+  },
   gridItem: {
     backgroundColor: '#fff',
     borderRadius: 20,
-    width: 160,
-    marginRight: 15,
+    width: Dimensions.get('window').width / 2 - 30,
+    marginHorizontal: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
@@ -927,46 +609,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
-  analyticsCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
-    marginTop: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  analyticsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 15,
-  },
-  analyticsContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  statReason: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-    textAlign: 'center',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
-  },
   fab: {
     position: 'absolute',
     bottom: 30,
@@ -1022,102 +664,27 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  modalOverlay: {
+  noResultsContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    padding: 40,
   },
-  modalContent: {
-    width: '100%',
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
+  noResultsIcon: {
+    fontSize: 64,
+    marginBottom: 20,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  modalTitle: {
-    fontSize: 18,
+  noResultsTitle: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
-  },
-  closeButton: {
-    padding: 5,
-  },
-  closeButtonText: {
-    fontSize: 18,
-    color: '#999',
-  },
-  formContainer: {
-    marginBottom: 20,
-  },
-  inputGroup: {
-    marginBottom: 15,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#333',
-  },
-  saveButton: {
-    backgroundColor: '#00C897',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  sharePreview: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  sharePreviewEmoji: {
-    fontSize: 48,
     marginBottom: 8,
+    textAlign: 'center',
   },
-  sharePreviewName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  sharePreviewDetails: {
-    fontSize: 14,
+  noResultsText: {
+    fontSize: 16,
     color: '#666',
-  },
-  shareDescription: {
-    fontSize: 14,
-    color: '#555',
     textAlign: 'center',
     marginBottom: 20,
-  },
-  shareButton: {
-    backgroundColor: '#00C897',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  shareButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

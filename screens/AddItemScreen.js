@@ -19,6 +19,9 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { useRoute, useFocusEffect } from '@react-navigation/native'; // Added useFocusEffect
+import { uploadFoodImage } from '../utils/uploadFoodImage';
+
 
 const { width } = Dimensions.get('window');
 
@@ -56,8 +59,16 @@ const STORAGE_CONDITIONS = [
 
 export default function AddItemScreen({ route, navigation }) {
   const editingItem = route.params?.item ?? null;
+  const scannedBarcode = route.params?.scannedBarcode || '';
+  const productData = route.params?.productData || null; // Added productData
+  const fromScanner = route.params?.fromScanner || false; // Added fromScanner
 
-  const [itemName, setItemName] = useState(editingItem?.item_name || '');
+  const [itemName, setItemName] = useState(
+    editingItem?.item_name || productData?.name || '' // Initialize with productData
+  );
+  const [barcode, setBarcode] = useState(
+    editingItem?.barcode || scannedBarcode || '' // Initialize with productData
+  );
   const [quantity, setQuantity] = useState(editingItem?.quantity?.toString() || '1');
   const [quantityUnit, setQuantityUnit] = useState(editingItem?.quantity_unit || 'pieces');
   const [showUnitPicker, setShowUnitPicker] = useState(false);
@@ -81,8 +92,13 @@ export default function AddItemScreen({ route, navigation }) {
   const [showOpeningDatePicker, setShowOpeningDatePicker] = useState(false);
   const [storageCondition, setStorageCondition] = useState(editingItem?.storage_condition || 'refrigerated');
   const [showStoragePicker, setShowStoragePicker] = useState(false);
-  const [description, setDescription] = useState(editingItem?.description || '');
-  const [itemImage, setItemImage] = useState(editingItem?.image_url || null);
+  const [description, setDescription] = useState(
+    editingItem?.description ||
+    (productData ? `Ingredients: ${productData.ingredients}` : '') // Initialize with productData
+  );
+  const [itemImage, setItemImage] = useState(
+    editingItem?.image_url || productData?.image || null // Initialize with productData
+  );
   const [showImageOptions, setShowImageOptions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [calculatedExpirationDate, setCalculatedExpirationDate] = useState(null);
@@ -94,6 +110,86 @@ export default function AddItemScreen({ route, navigation }) {
     }
   }, [route.params?.item]);
 
+  useEffect(() => {
+    if (scannedBarcode && !fromScanner) { // Only fetch if not coming from scanner with productData
+      fetchProductFromBarcode(scannedBarcode);
+    }
+  }, [scannedBarcode, fromScanner]);
+
+  // Add this effect to handle when coming from scanner
+  useFocusEffect(
+    React.useCallback(() => {
+      if (fromScanner && productData) {
+        // Auto-fill more fields from product data
+        if (productData.quantity) {
+          const qtyMatch = productData.quantity.match(/(\d+)/);
+          if (qtyMatch) {
+            setQuantity(qtyMatch[1]);
+          }
+        }
+
+        // Set nutrition info in description if not already set
+        if (!description && productData) {
+          let nutritionInfo = '';
+          if (productData.energy) nutritionInfo += `Energy: ${productData.energy}kJ\n`;
+          if (productData.fat) nutritionInfo += `Fat: ${productData.fat}g\n`;
+          if (productData.carbs) nutritionInfo += `Carbs: ${productData.carbs}g\n`;
+          if (productData.proteins) nutritionInfo += `Proteins: ${productData.proteins}g\n`;
+
+          if (nutritionInfo) {
+            setDescription(prev =>
+              prev ? `${prev}\n\nNutrition:\n${nutritionInfo}` : `Nutrition:\n${nutritionInfo}`
+            );
+          }
+        }
+      }
+    }, [productData, fromScanner, description])
+  );
+
+  // Update your fetchProductFromBarcode function
+  const fetchProductFromBarcode = async (code) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+      const data = await response.json();
+
+      if (data.status === 1 && data.product) {
+        const product = data.product;
+        setItemName(product.product_name || '');
+        setBarcode(code);
+
+        // Set image if available
+        if (product.image_url) {
+          setItemImage(product.image_url);
+        }
+
+        // Set quantity if available
+        if (product.quantity) {
+          const qtyMatch = product.quantity.match(/(\d+)/);
+          if (qtyMatch) {
+            setQuantity(qtyMatch[1]);
+          }
+        }
+
+        // Set ingredients in description
+        if (product.ingredients_text) {
+          setDescription(prev =>
+            prev ? prev : `Ingredients: ${product.ingredients_text}`
+          );
+        }
+
+        Alert.alert('Product Found', 'Product details have been auto-filled from Open Food Facts.');
+      } else {
+        Alert.alert('Product Not Found', 'The barcode was not found in Open Food Facts. Please enter the details manually.');
+      }
+    } catch (error) {
+      console.error('Error fetching product:', error);
+      Alert.alert('Error', 'Could not fetch product details. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Request permissions for camera and storage
   const requestPermissions = async () => {
     if (Platform.OS === 'android') {
@@ -101,7 +197,7 @@ export default function AddItemScreen({ route, navigation }) {
         const permissions = [
           PermissionsAndroid.PERMISSIONS.CAMERA,
         ];
-        
+
         // For Android 13+, use READ_MEDIA_IMAGES instead of READ_EXTERNAL_STORAGE
         if (Platform.Version >= 33) {
           permissions.push(PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES);
@@ -109,20 +205,20 @@ export default function AddItemScreen({ route, navigation }) {
           permissions.push(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
           permissions.push(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
         }
-        
+
         const granted = await PermissionsAndroid.requestMultiple(permissions);
-        
+
         console.log('Permissions granted:', granted);
-        
+
         const cameraGranted = granted[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED;
-        
+
         let storageGranted = false;
         if (Platform.Version >= 33) {
           storageGranted = granted[PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES] === PermissionsAndroid.RESULTS.GRANTED;
         } else {
           storageGranted = granted[PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE] === PermissionsAndroid.RESULTS.GRANTED;
         }
-        
+
         if (!cameraGranted || !storageGranted) {
           Alert.alert(
             'Permissions Required',
@@ -133,7 +229,7 @@ export default function AddItemScreen({ route, navigation }) {
             ]
           );
         }
-        
+
         return { cameraGranted, storageGranted };
       } catch (err) {
         console.warn('Permission request error:', err);
@@ -141,7 +237,7 @@ export default function AddItemScreen({ route, navigation }) {
         return { cameraGranted: false, storageGranted: false };
       }
     }
-    
+
     return { cameraGranted: true, storageGranted: true };
   };
 
@@ -175,15 +271,15 @@ export default function AddItemScreen({ route, navigation }) {
   const calculateEffectiveExpiration = () => {
     const shelfLife = OPENED_ITEM_SHELF_LIFE.default;
     const daysToAdd = shelfLife[storageCondition] || shelfLife.refrigerated;
-    
+
     const effectiveDate = new Date(openingDate);
     effectiveDate.setDate(effectiveDate.getDate() + daysToAdd);
-    
+
     // Use the earlier of the two dates (original expiration or calculated)
     const finalExpiration = effectiveDate < expirationDate ? effectiveDate : expirationDate;
-    
+
     setCalculatedExpirationDate(finalExpiration);
-    
+
     // Show warning if calculated expiration is much earlier than original
     const timeDiff = expirationDate.getTime() - effectiveDate.getTime();
     const daysDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
@@ -223,12 +319,12 @@ export default function AddItemScreen({ route, navigation }) {
     if (Platform.OS === 'android') {
       setShowDatePicker(false);
     }
-    
+
     if (event.type === 'dismissed') {
       setShowDatePicker(false);
       return;
     }
-    
+
     if (selectedDate) {
       setExpirationDate(selectedDate);
       if (Platform.OS === 'ios') {
@@ -241,12 +337,12 @@ export default function AddItemScreen({ route, navigation }) {
     if (Platform.OS === 'android') {
       setShowOpeningDatePicker(false);
     }
-    
+
     if (event.type === 'dismissed') {
       setShowOpeningDatePicker(false);
       return;
     }
-    
+
     if (selectedDate) {
       setOpeningDate(selectedDate);
       if (Platform.OS === 'ios') {
@@ -259,7 +355,6 @@ export default function AddItemScreen({ route, navigation }) {
     setShowImageOptions(true);
   };
 
-  // Fixed camera handler - use callback instead of navigation params
   const handleOpenCamera = () => {
     setShowImageOptions(false);
     navigation.navigate('Camera', {
@@ -323,77 +418,71 @@ export default function AddItemScreen({ route, navigation }) {
   };
 
   const handleSave = async () => {
-    if (!itemName.trim() || !quantity || !expirationDate) {
-      Alert.alert('Validation Error', 'Please fill all required fields.');
+  if (!itemName.trim() || !quantity || !expirationDate) {
+    Alert.alert('Validation Error', 'Please fill all required fields.');
+    return;
+  }
+
+  const quantityNum = parseFloat(quantity);
+  if (isNaN(quantityNum) || quantityNum <= 0) {
+    Alert.alert('Validation Error', 'Please enter a valid quantity.');
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const { data: { user } } = await supabase.auth.getUser ();
+
+    if (!user) {
+      Alert.alert('Auth Error', 'You must be logged in.');
       return;
     }
 
-    const quantityNum = parseFloat(quantity);
-    if (isNaN(quantityNum) || quantityNum <= 0) {
-      Alert.alert('Validation Error', 'Please enter a valid quantity.');
-      return;
+    const item = {
+      user_id: user.id,
+      item_name: itemName.trim(),
+      barcode: barcode || null,
+      quantity: quantityNum,
+      quantity_unit: quantityUnit,
+      expiration_date: formatDateForDatabase(expirationDate),
+      is_opened: isOpened,
+      opening_date: isOpened ? formatDateForDatabase(openingDate) : null,
+      storage_condition: isOpened ? storageCondition : null,
+      description: description.trim() || null,
+      image_url: itemImage,
+    };
+
+    console.log('Item to save:', item); // Debugging line
+
+    const response = editingItem
+      ? await supabase.from('pantry_items').update(item).eq('id', editingItem.id)
+      : await supabase.from('pantry_items').insert(item);
+
+    if (response.error) {
+      console.error('Save error:', response.error);
+      Alert.alert('Save Failed', response.error.message);
+    } else {
+      console.log('Item saved successfully');
+      resetForm();
+      Alert.alert('Success', `Item ${editingItem ? 'updated' : 'added'} successfully!`, [
+        {
+          text: 'OK',
+          onPress: () => navigation.navigate('Pantry')
+        },
+      ]);
     }
+  } catch (error) {
+    console.error('Save error:', error);
+    Alert.alert('Error', 'An unexpected error occurred.');
+  } finally {
+    setLoading(false);
+  }
+};
 
-    setLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-
-      if (!user) {
-        Alert.alert('Auth Error', 'You must be logged in.');
-        return;
-      }
-
-      const item = {
-        user_id: user.id,
-        item_name: itemName.trim(),
-        quantity: quantityNum,
-        quantity_unit: quantityUnit,
-        expiration_date: formatDateForDatabase(expirationDate),
-        is_opened: isOpened,
-        opening_date: isOpened ? formatDateForDatabase(openingDate) : null,
-        storage_condition: isOpened ? storageCondition : null,
-        description: description.trim() || null,
-        image_url: itemImage,
-      };
-
-      await supabase
-  .from('pantry_items')
-  .insert({
-    user_id: user.id,
-    item_name: itemName,
-    quantity: qty,
-    expiration_date: date,
-    image_url: photoUri, // Save the captured photo here
-  });
-
-
-      const response = editingItem
-        ? await supabase.from('pantry_items').update(item).eq('id', editingItem.id)
-        : await supabase.from('pantry_items').insert(item);
-
-      if (response.error) {
-        console.error('Save error:', response.error);
-        Alert.alert('Save Failed', response.error.message);
-      } else {
-        console.log('Item saved successfully');
-        resetForm();
-        Alert.alert('Success', `Item ${editingItem ? 'updated' : 'added'} successfully!`, [
-          { 
-            text: 'OK', 
-            onPress: () => navigation.navigate('Pantry') 
-          },
-        ]);
-      }
-    } catch (error) {
-      console.error('Save error:', error);
-      Alert.alert('Error', 'An unexpected error occurred.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const resetForm = () => {
     setItemName('');
+    setBarcode('');
     setQuantity('1');
     setQuantityUnit('pieces');
     const defaultDate = new Date();
@@ -522,7 +611,7 @@ export default function AddItemScreen({ route, navigation }) {
               <Ionicons name="image" size={24} color="#00C897" />
               <Text style={styles.imageOptionText}>Choose from Library</Text>
             </TouchableOpacity>
-            
+
             {itemImage && (
               <TouchableOpacity
                 style={styles.imageOption}
@@ -540,7 +629,7 @@ export default function AddItemScreen({ route, navigation }) {
 
   return (
     <View style={styles.screenContainer}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
       >
@@ -569,6 +658,36 @@ export default function AddItemScreen({ route, navigation }) {
               </View>
             )}
           </TouchableOpacity>
+
+          {/* Barcode Section */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Barcode</Text>
+            <View style={styles.barcodeContainer}>
+              <TextInput
+                style={[styles.input, { flex: 1 }]}
+                value={barcode}
+                onChangeText={setBarcode}
+                placeholder="Enter barcode or scan"
+                placeholderTextColor="#999"
+                keyboardType="numeric"
+              />
+              <TouchableOpacity
+                style={styles.scanButton}
+                onPress={() => navigation.navigate('BarcodeScannerScreen')}
+              >
+                <Ionicons name="barcode" size={24} color="#fff" />
+              </TouchableOpacity>
+              {barcode && !editingItem && ( // Show fetch button only if barcode is present and not editing
+                <TouchableOpacity
+                  style={styles.fetchButton}
+                  onPress={() => fetchProductFromBarcode(barcode)}
+                  disabled={loading}
+                >
+                  <Ionicons name="cloud-download" size={20} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
 
           {/* Item Name */}
           <View style={styles.inputGroup}>
@@ -611,7 +730,7 @@ export default function AddItemScreen({ route, navigation }) {
           {/* Expiration Date */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Expiration Date *</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.pickerButton}
               onPress={() => setShowDatePicker(true)}
             >
@@ -645,7 +764,7 @@ export default function AddItemScreen({ route, navigation }) {
               >
                 <Text style={styles.quickDateButtonText}>Tomorrow</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.quickDateButton}
                 onPress={() => {
@@ -656,7 +775,7 @@ export default function AddItemScreen({ route, navigation }) {
               >
                 <Text style={styles.quickDateButtonText}>1 Week</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
                 style={styles.quickDateButton}
                 onPress={() => {
@@ -690,7 +809,7 @@ export default function AddItemScreen({ route, navigation }) {
               {/* Opening Date */}
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>Opening Date</Text>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.pickerButton}
                   onPress={() => setShowOpeningDatePicker(true)}
                 >
@@ -735,7 +854,7 @@ export default function AddItemScreen({ route, navigation }) {
                   <Text style={styles.calculationDays}>
                     ({getDaysUntilExpiration(calculatedExpirationDate)} days from now)
                   </Text>
-                  
+
                   {showExpirationWarning && (
                     <View style={styles.warningContainer}>
                       <Ionicons name="warning" size={16} color="#FF9800" />
@@ -839,6 +958,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#757575',
     marginTop: 8,
+  },
+  barcodeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scanButton: {
+    backgroundColor: '#00C897',
+    borderRadius: 8,
+    padding: 12,
+    marginLeft: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fetchButton: { // Added style for fetch button
+    backgroundColor: '#2196F3',
+    borderRadius: 8,
+    padding: 12,
+    marginLeft: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   inputGroup: {
     marginBottom: 15,

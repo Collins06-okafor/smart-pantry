@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   retryButton: {
-    backgroundColor: '#5a2ca0',
+    backgroundColor: '#00C897',
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 20,
@@ -387,11 +387,11 @@ const styles = StyleSheet.create({
   },
   locateText: {
     fontSize: 16,
-    color: '#5a2ca0',
+    color: '#00C897',
     fontWeight: '500',
   },
   button: {
-    backgroundColor: '#5a2ca0',
+    backgroundColor: '#00C897',
     padding: 15,
     borderRadius: 30,
     alignItems: 'center',

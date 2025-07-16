@@ -7,13 +7,11 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "jsEngine": "hermes",
-    
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    
     "ios": {
       "supportsTablet": true,
       "config": {
@@ -45,7 +43,8 @@
       }
     },
     "plugins": [
-      "expo-dev-client"
+      "expo-dev-client",
+      "expo-barcode-scanner"
     ]
   }
 }
