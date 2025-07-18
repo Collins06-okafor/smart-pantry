@@ -1,17 +1,11 @@
+// ChatScreen.js
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  View,
-  TextInput,
-  TouchableOpacity,
-  Text,
-  FlatList,
-  KeyboardAvoidingView,
-  Platform,
-  Keyboard,
-  Alert,
-  StyleSheet,
+  View, TextInput, TouchableOpacity, Text, FlatList, KeyboardAvoidingView,
+  Platform, Keyboard, Alert, StyleSheet,
 } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { TouchableWithoutFeedback } from 'react-native';
 
 export default function ChatScreen({ route, navigation }) {
   const { recipientId, chatType = 'private', title } = route.params || {};
@@ -19,13 +13,10 @@ export default function ChatScreen({ route, navigation }) {
   const [messages, setMessages] = useState([]);
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const flatListRef = useRef(null);
 
   useEffect(() => {
-    if (title) {
-      navigation.setOptions({ title });
-    }
+    if (title) navigation.setOptions({ title });
 
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -36,74 +27,52 @@ export default function ChatScreen({ route, navigation }) {
       }
       setLoading(false);
     })();
-
-    const keyboardDidShow = Keyboard.addListener('keyboardDidShow', e => {
-      setKeyboardHeight(e.endCoordinates.height);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    });
-
-    const keyboardDidHide = Keyboard.addListener('keyboardDidHide', () => {
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      keyboardDidShow.remove();
-      keyboardDidHide.remove();
-    };
   }, []);
 
   const fetchMessages = async (userId) => {
-  let query = supabase
-    .from('messages')
-    .select('*')
-    .order('created_at', { ascending: true });
+    let query = supabase.from('messages').select('*').order('created_at', { ascending: true });
 
-  if (chatType === 'private' && recipientId) {
-    query = query.or(`and(sender_id.eq.${userId},recipient_id.eq.${recipientId}),and(sender_id.eq.${recipientId},recipient_id.eq.${userId})`);
-  } else if (chatType === 'general') {
-    query = query.is('recipient_id', null);
-  } else if (chatType === 'support') {
-    query = query.or(`and(sender_id.eq.${userId},chat_type.eq.support),and(recipient_id.eq.${userId},chat_type.eq.support)`);
-  }
+    if (chatType === 'private' && recipientId) {
+      query = query.or(`and(sender_id.eq.${userId},recipient_id.eq.${recipientId}),and(sender_id.eq.${recipientId},recipient_id.eq.${userId})`);
+    } else if (chatType === 'general') {
+      query = query.is('recipient_id', null).eq('chat_type', 'general');
+    } else if (chatType === 'support') {
+      query = query.or(`and(sender_id.eq.${userId},chat_type.eq.support),and(recipient_id.eq.${userId},chat_type.eq.support)`);
+    }
 
-  const { data, error } = await query;
-  if (!error && data) {
-    const filtered = data.filter(m => {
-      const messageDate = new Date(m.created_at);
-      return Date.now() - messageDate.getTime() <= 2 * 24 * 60 * 60 * 1000; // within 2 days
-    });
-    setMessages(filtered);
-  } else {
-    console.error('Fetch messages error:', error);
-  }
-};
-
+    const { data, error } = await query;
+    if (!error && data) {
+      const recent = data.filter(m => Date.now() - new Date(m.created_at).getTime() <= 2 * 24 * 60 * 60 * 1000);
+      setMessages(recent);
+    } else {
+      console.error('Fetch messages error:', error);
+    }
+  };
 
   const subscribeToMessages = (userId) => {
     const channel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
         const m = payload.new;
-        let shouldShow = false;
+        let show = false;
 
         if (chatType === 'private' && recipientId) {
-          shouldShow = (m.sender_id === userId && m.recipient_id === recipientId) ||
-                       (m.sender_id === recipientId && m.recipient_id === userId);
+          show = (m.sender_id === userId && m.recipient_id === recipientId) ||
+                 (m.sender_id === recipientId && m.recipient_id === userId);
         } else if (chatType === 'general') {
-          shouldShow = m.recipient_id === null;
+          show = m.recipient_id === null && m.chat_type === 'general';
         } else if (chatType === 'support') {
-          shouldShow = (m.sender_id === userId && m.chat_type === 'support') ||
-                       (m.recipient_id === userId && m.chat_type === 'support');
+          show = (m.sender_id === userId && m.chat_type === 'support') ||
+                 (m.recipient_id === userId && m.chat_type === 'support');
         }
 
-        if (shouldShow) {
-  const isFresh = Date.now() - new Date(m.created_at).getTime() <= 2 * 24 * 60 * 60 * 1000;
-  if (isFresh) {
-    setMessages(prev => [...prev, m]);
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-  }
-}
-
+        if (show) {
+          const fresh = Date.now() - new Date(m.created_at).getTime() <= 2 * 24 * 60 * 60 * 1000;
+          if (fresh) {
+            setMessages(prev => [...prev, m]);
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+          }
+        }
       })
       .subscribe();
 
@@ -113,26 +82,24 @@ export default function ChatScreen({ route, navigation }) {
   const sendMessage = async () => {
     if (!message.trim()) return;
 
-    const tempMessage = {
-      id: Date.now(), // temporary unique ID
+    const tempMsg = {
+      id: Date.now(),
       sender_id: userId,
       message: message.trim(),
       chat_type: chatType,
-      recipient_id: chatType === 'private' ? recipientId :
-                    chatType === 'support' ? 'support' : null,
+      recipient_id: chatType === 'private' ? recipientId : null,
       created_at: new Date().toISOString(),
     };
 
-    // Optimistically update UI
-    setMessages(prev => [...prev, tempMessage]);
+    setMessages(prev => [...prev, tempMsg]);
     setMessage('');
 
     try {
       const { error } = await supabase.from('messages').insert({
-        sender_id: tempMessage.sender_id,
-        message: tempMessage.message,
-        chat_type: tempMessage.chat_type,
-        recipient_id: tempMessage.recipient_id,
+        sender_id: tempMsg.sender_id,
+        message: tempMsg.message,
+        chat_type: tempMsg.chat_type,
+        recipient_id: tempMsg.recipient_id,
       });
 
       if (error) {
@@ -146,21 +113,17 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const renderMessage = ({ item }) => {
-    const isMyMessage = item.sender_id === userId;
-
+    const isMine = item.sender_id === userId;
     return (
       <View style={[
         styles.messageContainer,
-        isMyMessage ? styles.myMessageContainer : styles.theirMessageContainer
+        isMine ? styles.myMessageContainer : styles.theirMessageContainer
       ]}>
         <View style={[
           styles.messageBubble,
-          isMyMessage ? styles.myMessage : styles.theirMessage
+          isMine ? styles.myMessage : styles.theirMessage
         ]}>
-          {chatType === 'general' && !isMyMessage && (
-            <Text style={styles.senderName}>{item.sender_name || 'Anonymous'}</Text>
-          )}
-          <Text style={isMyMessage ? styles.myMessageText : styles.theirMessageText}>
+          <Text style={isMine ? styles.myMessageText : styles.theirMessageText}>
             {item.message}
           </Text>
           <Text style={styles.timestamp}>
@@ -172,28 +135,9 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const renderChatHeader = () => {
-    if (chatType === 'general') {
-      return (
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerText}>🌐 Community Chat</Text>
-          <Text style={styles.headerSubtext}>Connect with the community</Text>
-        </View>
-      );
-    } else if (chatType === 'support') {
-      return (
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerText}>🆘 Support Chat</Text>
-          <Text style={styles.headerSubtext}>We're here to help</Text>
-        </View>
-      );
-    } else if (chatType === 'private') {
-      return (
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerText}>💬 Private Chat</Text>
-          <Text style={styles.headerSubtext}>Direct conversation</Text>
-        </View>
-      );
-    }
+    if (chatType === 'general') return <Header title="🌐 Community Chat" subtitle="Connect with the community" />;
+    if (chatType === 'support') return <Header title="🆘 Support Chat" subtitle="We're here to help" />;
+    if (chatType === 'private') return <Header title="💬 Private Chat" subtitle="Direct conversation" />;
     return null;
   };
 
@@ -206,41 +150,33 @@ export default function ChatScreen({ route, navigation }) {
   }
 
   return (
+  <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       {renderChatHeader()}
 
+      {chatType !== 'support' && (
+  <View style={styles.infoNoteContainer}>
+    <Text style={styles.infoNote}>
+      This chat only shows messages from the last 2 days.
+    </Text>
+  </View>
+)}
+
+
       <FlatList
         ref={flatListRef}
-        data={messages}
+        data={[...messages].reverse()} // Reverse the array to use inverted
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderMessage}
         style={styles.messagesList}
-        onContentSizeChange={() => {
-          if (messages.length > 0) {
-            flatListRef.current?.scrollToEnd({ animated: true });
-          }
-        }}
-        onLayout={() => {
-          if (messages.length > 0) {
-            setTimeout(() => {
-              flatListRef.current?.scrollToEnd({ animated: false });
-            }, 100);
-          }
-        }}
+        inverted={true}
       />
 
-      <View style={styles.infoNoteContainer}>
-  <Text style={styles.infoNote}>
-    Messages older than 2 days are automatically cleared.
-  </Text>
-</View>
-
-
-      <View style={[styles.inputContainer, Platform.OS === 'android' && keyboardHeight > 0 && { marginBottom: keyboardHeight }]}>
+      <View style={styles.inputContainer}>
         <TextInput
           value={message}
           onChangeText={setMessage}
@@ -251,10 +187,6 @@ export default function ChatScreen({ route, navigation }) {
             'Type a message...'
           }
           multiline
-          maxLength={500}
-          onFocus={() => {
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 300);
-          }}
         />
         <TouchableOpacity
           style={[styles.sendButton, !message.trim() && styles.sendButtonDisabled]}
@@ -265,8 +197,16 @@ export default function ChatScreen({ route, navigation }) {
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
-  );
+  </TouchableWithoutFeedback>
+);
 }
+
+const Header = ({ title, subtitle }) => (
+  <View style={styles.headerInfo}>
+    <Text style={styles.headerText}>{title}</Text>
+    <Text style={styles.headerSubtext}>{subtitle}</Text>
+  </View>
+);
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
@@ -278,35 +218,17 @@ const styles = StyleSheet.create({
   messageContainer: { marginVertical: 4, maxWidth: '80%' },
   myMessageContainer: { alignSelf: 'flex-end' },
   theirMessageContainer: { alignSelf: 'flex-start' },
-  messageBubble: { padding: 12, borderRadius: 16, maxWidth: '100%' },
+  messageBubble: { padding: 12, borderRadius: 16 },
   myMessage: { backgroundColor: '#007AFF', borderBottomRightRadius: 4 },
-  theirMessage: {
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
-  },
-  myMessageText: { color: '#fff', fontSize: 16, lineHeight: 20 },
-  theirMessageText: { color: '#333', fontSize: 16, lineHeight: 20 },
-  senderName: { fontSize: 12, fontWeight: 'bold', color: '#666', marginBottom: 4 },
+  theirMessage: { backgroundColor: '#fff', borderBottomLeftRadius: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 1, elevation: 1 },
+  myMessageText: { color: '#fff', fontSize: 16 },
+  theirMessageText: { color: '#333', fontSize: 16 },
   timestamp: { fontSize: 11, opacity: 0.7, marginTop: 4, textAlign: 'right' },
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 16, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e0e0e0' },
-  input: { flex: 1, borderColor: '#ddd', borderWidth: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, marginRight: 12, maxHeight: 100, fontSize: 16, backgroundColor: '#f9f9f9' },
-  sendButton: { backgroundColor: '#007AFF', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  input: { flex: 1, borderColor: '#ddd', borderWidth: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12, maxHeight: 100, fontSize: 16, backgroundColor: '#f9f9f9' },
+  sendButton: { backgroundColor: '#007AFF', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 20 },
   sendButtonDisabled: { backgroundColor: '#ccc' },
   sendButtonText: { color: '#fff', fontWeight: '600', fontSize: 16 },
-  infoNoteContainer: {
-  alignItems: 'center',
-  paddingBottom: 8,
-  backgroundColor: '#f5f5f5',
-},
-infoNote: {
-  fontSize: 12,
-  color: '#999',
-  fontStyle: 'italic',
-},
-
+  infoNoteContainer: { alignItems: 'center', paddingBottom: 8 },
+  infoNote: { fontSize: 12, color: '#999', fontStyle: 'italic' },
 });

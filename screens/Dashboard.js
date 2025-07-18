@@ -171,7 +171,10 @@ export default function DashboardScreen() {
           </View>
 
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.profileIcon}>
+            <TouchableOpacity 
+              style={styles.profileIcon}
+              onPress={() => navigation.navigate('ProfileScreen', { userId: dashboardData.id })}
+            >
               {dashboardData.profilePhotoUrl ? (
                 <Image 
                   source={{ uri: dashboardData.profilePhotoUrl }} 
@@ -182,6 +185,7 @@ export default function DashboardScreen() {
                 <User size={24} color={COLORS.white} />
               )}
             </TouchableOpacity>
+
             <TouchableOpacity onPress={onRefresh} style={styles.iconButton}>
               <RefreshCw size={20} color={COLORS.gray} />
             </TouchableOpacity>
@@ -312,10 +316,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden', // Important for circular image
   },
   profileImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
+  width: 36,
+  height: 36,
+  borderRadius: 18,
+  borderWidth: 1,
+  borderColor: '#fff',
+},
+
   actions: { flexDirection: 'row', gap: 10 },
   iconButton: { padding: 10, borderRadius: 999, backgroundColor: '#eee' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eee', borderRadius: 20, padding: 10, marginBottom: 20 },

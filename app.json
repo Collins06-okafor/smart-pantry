@@ -19,7 +19,9 @@
       },
       "bundleIdentifier": "com.collins06.smartpantry",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera to take photos of food items.",
+        "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photo library to select images of food items."
       }
     },
     "android": {
@@ -32,7 +34,11 @@
           "apiKey": "AIzaSyCZdKRukNvtA6YzdyQnaDaIGoqVop0aDhg"
         }
       },
-      "package": "com.collins06.smartpantry"
+      "package": "com.collins06.smartpantry",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -44,7 +50,12 @@
     },
     "plugins": [
       "expo-dev-client",
-      "expo-barcode-scanner"
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan barcodes."
+        }
+      ]
     ]
   }
 }

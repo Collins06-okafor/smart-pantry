@@ -143,12 +143,20 @@ export default function PantryScreen({ navigation }) {
     fetchPantryItems();
   }, [searchQuery]);
 
-  const navigateToFoodDetails = (item) => {
-    navigation.navigate('FoodDetails', {
-      foodItem: item,
-      expirationStatus: getExpirationStatus(item.expiration_date)
-    });
-  };
+ const navigateToFoodDetails = (item) => {
+  navigation.navigate('FoodDetails', {
+    foodItem: item,
+    expirationStatus: getExpirationStatus(item.expiration_date),
+    onItemUpdated: (updatedItem) => {
+      // Update the item in the pantryItems state
+      setPantryItems(prevItems => 
+        prevItems.map(prevItem => 
+          prevItem.id === updatedItem.id ? updatedItem : prevItem
+        )
+      );
+    }
+  });
+};
 
   const getExpirationStatus = (dateString) => {
     try {
@@ -315,7 +323,7 @@ export default function PantryScreen({ navigation }) {
     {/* Popular Dishes Section */}
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Popular meals</Text>
+        <Text style={styles.sectionTitle}>Popular items</Text>
       </View>
 
       {filteredItems.length > 0 ? (
@@ -336,7 +344,7 @@ export default function PantryScreen({ navigation }) {
     {filteredItems.length > 4 && (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Meal of the week</Text>
+          <Text style={styles.sectionTitle}>item of the week</Text>
         </View>
 
         <FlatList
@@ -354,7 +362,7 @@ export default function PantryScreen({ navigation }) {
     {filteredItems.length > 0 && (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>All Available meals</Text>
+          <Text style={styles.sectionTitle}>All Available meals/items</Text>
         </View>
       </View>
     )}

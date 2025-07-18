@@ -10,38 +10,38 @@ export default function Login({ navigation }) {
   const [secureEntry, setSecureEntry] = useState(true);
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
+  if (!email || !password) {
+    Alert.alert('Error', 'Please fill in all fields');
+    return;
+  }
 
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+  setLoading(true);
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      if (error) throw error;
+    if (error) throw error;
 
-      const user = data.user;
-      const { data: profile, error: profileError } = await supabase
-        .from('profile')
-        .select('city, address, latitude, longitude')
-        .eq('id', user.id)
-        .single();
+    // Optional: Fetch profile (in case you need it later)
+    const user = data.user;
+    await supabase
+      .from('profile')
+      .select('city, address, latitude, longitude')
+      .eq('id', user.id)
+      .single();
 
-      if (profileError) throw profileError;
+    // Navigate directly to MainTabs (Dashboard)
+    navigation.replace('MainTabs');
 
-      const hasLocation = profile.city && profile.latitude !== null && profile.longitude !== null;
-      navigation.replace(hasLocation ? 'MainTabs' : 'Location');
-      
-    } catch (error) {
-      Alert.alert('Login Error', error.message || 'An error occurred during login');
-    } finally {
-      setLoading(false);
-    }
-  };
+  } catch (error) {
+    Alert.alert('Login Error', error.message || 'An error occurred during login');
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <KeyboardAvoidingView 

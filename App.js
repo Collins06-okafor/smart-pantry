@@ -141,6 +141,8 @@ export default function App() {
           <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
           <Stack.Screen name="BarcodeScannerScreen" component={BarcodeScannerScreen} />
           <Stack.Screen name="FoodDetails" component={FoodDetailsScreen} />
+          <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
+
         </Stack.Navigator>
       </NavigationContainer>
     </ThemeProvider>

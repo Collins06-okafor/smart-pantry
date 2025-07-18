@@ -41,7 +41,7 @@ export default function DiscardedItemsScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
-      <Text style={styles.title}>Discarded Items</Text>
+      <Text style={styles.title}></Text>
       {loading ? (
         <ActivityIndicator size="large" color="#00C897" style={{ marginTop: 20 }} />
       ) : discardedItems.length === 0 ? (
