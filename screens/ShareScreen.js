@@ -71,34 +71,37 @@ const useShareData = (currentUser) => {
   const [mySharedItems, setMySharedItems] = useState([]);
   const [myPantryItems, setMyPantryItems] = useState([]);
 
-  const fetchNearbyUsers = useCallback(async (userId) => {
-    try {
-      const { data: myProfile, error: profileError } = await supabase
-        .from('profile')
-        .select('latitude, longitude')
-        .eq('id', userId)
-        .single();
+    const fetchNearbyUsers = useCallback(async (userId) => {
+  try {
+    // Get current user's location
+    const { data: myProfile, error: profileError } = await supabase
+      .from('profile')
+      .select('latitude, longitude')
+      .eq('id', userId)
+      .single();
 
-      if (profileError) throw profileError;
-      if (!myProfile.latitude || !myProfile.longitude) {
-        setNearbyUsers([]);
-        return;
-      }
-
-      const { data, error } = await supabase.rpc('get_nearby_users', {
-        lat: myProfile.latitude,
-        lng: myProfile.longitude,
-        radius: NEARBY_RADIUS,
-        exclude_user_id: userId
-      });
-
-      if (error) throw error;
-      setNearbyUsers(data?.map(u => u.id) || []);
-    } catch (err) {
-      console.error('Error fetching nearby users:', err);
+    if (profileError) throw profileError;
+    if (!myProfile.latitude || !myProfile.longitude) {
       setNearbyUsers([]);
+      return;
     }
-  }, []);
+
+    // Get nearby users (excluding current user)
+    const { data, error } = await supabase.rpc('get_nearby_users', {
+      lat: myProfile.latitude,
+      lng: myProfile.longitude,
+      radius: NEARBY_RADIUS,
+      exclude_user_id: userId
+    });
+
+    if (error) throw error;
+    setNearbyUsers(data?.map(u => u.id) || []);
+  } catch (err) {
+    console.error('Error fetching nearby users:', err);
+    setNearbyUsers([]);
+  }
+}, []);
+
 
  const fetchFoodRequests = useCallback(async (userIds) => {
   try {
@@ -133,41 +136,84 @@ const useShareData = (currentUser) => {
 }, [currentUser?.id]);
 
   const fetchSharedItems = useCallback(async (userIds) => {
-    if (userIds.length === 0) {
+  if (userIds.length === 0) {
+    setSharedItems([]);
+    return;
+  }
+
+  try {
+    // First fetch the shared items with basic info
+    const { data: sharedItemsData, error: sharedError } = await supabase
+      .from('shared_items')
+      .select(`
+        id, 
+        offered_at, 
+        status,
+        item_link,
+        user_id
+      `)
+      .in('user_id', userIds)
+      .eq('status', STATUSES.AVAILABLE)
+      .order('offered_at', { ascending: false });
+
+    if (sharedError) throw sharedError;
+    if (!sharedItemsData || sharedItemsData.length === 0) {
       setSharedItems([]);
       return;
     }
 
-    try {
-      const { data, error } = await supabase
-        .from('shared_items')
-        .select(`
-          id, 
-          offered_at, 
-          status,
-          item_id,
-          item_link,
-          user_id,
-          pantry_items!inner(
-            id,
-            item_name, 
-            expiration_date, 
-            quantity, 
-            user_id,
-            profile!pantry_items_user_id_fkey(name)
-          )
-        `)
-        .in('user_id', userIds)
-        .eq('status', STATUSES.AVAILABLE)
-        .order('offered_at', { ascending: false });
+    // Get all unique pantry item IDs
+    const pantryItemIds = sharedItemsData
+      .map(item => item.item_link)
+      .filter(id => id !== null);
 
-      if (error) throw error;
-      setSharedItems(data || []);
-    } catch (err) {
-      console.error('Error fetching shared items:', err);
-      setSharedItems([]);
-    }
-  }, []);
+    // Fetch the associated pantry items
+    const { data: pantryItemsData, error: pantryError } = await supabase
+      .from('pantry_items')
+      .select('*')
+      .in('id', pantryItemIds);
+
+    if (pantryError) throw pantryError;
+
+    // Get all unique user IDs from both shared items and pantry items
+    const allUserIds = [
+      ...new Set([
+        ...sharedItemsData.map(item => item.user_id),
+        ...(pantryItemsData?.map(item => item.user_id) || [])
+      ])
+    ];
+
+    // Fetch user profiles
+    const { data: profilesData, error: profilesError } = await supabase
+      .from('profile')
+      .select('id, name')
+      .in('id', allUserIds);
+
+    if (profilesError) throw profilesError;
+
+    // Combine all the data
+    const combinedData = sharedItemsData.map(sharedItem => {
+      const pantryItem = pantryItemsData?.find(item => item.id === sharedItem.item_link);
+      const ownerProfile = profilesData?.find(p => p.id === sharedItem.user_id);
+      const pantryOwnerProfile = pantryItem ? 
+        profilesData?.find(p => p.id === pantryItem.user_id) : 
+        null;
+
+      return {
+        ...sharedItem,
+        pantry_items: pantryItem ? {
+          ...pantryItem,
+          profile: pantryOwnerProfile || ownerProfile || null
+        } : null
+      };
+    }).filter(item => item.pantry_items !== null); // Filter out items with no pantry data
+
+    setSharedItems(combinedData);
+  } catch (err) {
+    console.error('Error fetching shared items:', err);
+    setSharedItems([]);
+  }
+}, []);
 
   const fetchMySharedItems = useCallback(async (userId) => {
     try {

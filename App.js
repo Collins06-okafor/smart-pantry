@@ -28,6 +28,8 @@ import CameraScreen from './screens/CameraScreen';
 import RecipeDetailScreen from './screens/RecipeDetailScreen';
 import FoodDetailsScreen from './screens/FoodDetailsScreen';
 import BarcodeScannerScreen from './screens/BarcodeScannerScreen';
+import UserListScreen from './screens/UserListScreen';
+import ConversationListScreen from './screens/ConversationListScreen';  
 
 // --- Add ThemeContext import ---
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -142,6 +144,9 @@ export default function App() {
           <Stack.Screen name="BarcodeScannerScreen" component={BarcodeScannerScreen} />
           <Stack.Screen name="FoodDetails" component={FoodDetailsScreen} />
           <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
+          <Stack.Screen name="ConversationList" component={ConversationListScreen} />
+<Stack.Screen name="UserList" component={UserListScreen} />
+
 
         </Stack.Navigator>
       </NavigationContainer>

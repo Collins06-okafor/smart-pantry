@@ -142,6 +142,29 @@ export default function DashboardScreen() {
     fetchData();
   }, []);
 
+  useEffect(() => {
+  const channel = supabase
+    .channel('pantry_items_updates')
+    .on(
+      'postgres_changes',
+      {
+        event: '*', // Listen to INSERT, UPDATE, DELETE
+        schema: 'public',
+        table: 'pantry_items'
+      },
+      (payload) => {
+        console.log('Pantry change detected:', payload);
+        fetchData(); // Re-fetch dashboard data when pantry items change
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
@@ -227,6 +250,18 @@ export default function DashboardScreen() {
           <QuickAction icon={<Package size={24} />} label="My Pantry" onPress={() => navigation.navigate('Pantry')} />
           <QuickAction icon={<ChefHat size={24} />} label="Recipes" onPress={() => navigation.navigate('Recipes')} />
           <QuickAction icon={<UserPlus size={24} />} label="Share" onPress={() => navigation.navigate('Share')} />
+          <QuickAction 
+  icon={<Users size={24} />} 
+  label="Chats" 
+  onPress={() => navigation.navigate('ConversationList')} 
+/>
+
+<QuickAction 
+  icon={<UserPlus size={24} />} 
+  label="New Chat" 
+  onPress={() => navigation.navigate('UserList')} 
+/>
+
         </View>
 
         {/* Expiring Soon */}

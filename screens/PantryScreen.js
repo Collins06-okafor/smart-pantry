@@ -70,16 +70,17 @@ export default function PantryScreen({ navigation }) {
     }, [])
   );
 
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredItems(pantryItems);
-    } else {
-      const filtered = pantryItems.filter(item =>
-        item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredItems(filtered);
-    }
-  }, [searchQuery, pantryItems]);
+ useEffect(() => {
+  if (searchQuery.trim() === '') {
+    setFilteredItems(pantryItems);
+  } else {
+    const filtered = pantryItems.filter(item =>
+      item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    setFilteredItems(filtered);
+  }
+}, [searchQuery, pantryItems]);  // Ensure both dependencies are included
+
 
   const initializeScreen = async () => {
     try {
@@ -143,20 +144,40 @@ export default function PantryScreen({ navigation }) {
     fetchPantryItems();
   }, [searchQuery]);
 
- const navigateToFoodDetails = (item) => {
-  navigation.navigate('FoodDetails', {
-    foodItem: item,
-    expirationStatus: getExpirationStatus(item.expiration_date),
+  const navigateToFoodDetails = (item) => {
+    navigation.navigate('FoodDetails', {
+      foodItem: item,
+      expirationStatus: getExpirationStatus(item.expiration_date),
     onItemUpdated: (updatedItem) => {
-      // Update the item in the pantryItems state
-      setPantryItems(prevItems => 
-        prevItems.map(prevItem => 
-          prevItem.id === updatedItem.id ? updatedItem : prevItem
-        )
-      );
-    }
-  });
+  const updatedItems = pantryItems.map(prevItem =>
+    prevItem.id === updatedItem.id ? updatedItem : prevItem
+  );
+  updateLocalItems(updatedItems);
+
+  
+  setFilteredItems(prevItems =>
+    prevItems.map(prevItem => 
+      prevItem.id === updatedItem.id ? updatedItem : prevItem
+    )
+  );
+}
+
+    });
+  };
+
+  const updateLocalItems = (newItems) => {
+  setPantryItems(newItems);
+
+  if (searchQuery.trim() === '') {
+    setFilteredItems(newItems);
+  } else {
+    const filtered = newItems.filter(item =>
+      item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    setFilteredItems(filtered);
+  }
 };
+
 
   const getExpirationStatus = (dateString) => {
     try {
@@ -210,19 +231,74 @@ export default function PantryScreen({ navigation }) {
     return '🥫';
   };
 
-  const generateRandomFoodData = (item) => {
-    const prepTimes = ['15 min', '20 min', '30 min', '45 min', '60 min'];
-    const calories = ['150 kcal', '200 kcal', '245 kcal', '300 kcal', '350 kcal'];
-    const ratings = ['4.2', '4.5', '4.7', '4.8', '4.9'];
-    const distances = ['1.2 km', '2.5 km', '3.6 km', '4.1 km', '5.0 km'];
+  const getFoodData = (item) => {
+    const itemName = item.item_name.toLowerCase();
+    
+    // For items that don't have preparation time or calories
+    if (itemName.includes('water') || itemName.includes('salt') || 
+        itemName.includes('spice') || itemName.includes('oil')) {
+      return {
+        prep_time: '',
+        calories: '',
+        rating: '4.5',
+        distance: '0 km',
+        description: `${item.item_name} ready for consumption.`
+      };
+    }
 
-    return {
-      prep_time: prepTimes[Math.floor(Math.random() * prepTimes.length)],
-      calories: calories[Math.floor(Math.random() * calories.length)],
-      rating: ratings[Math.floor(Math.random() * ratings.length)],
-      distance: distances[Math.floor(Math.random() * distances.length)],
-      description: `Delicious ${item.item_name.toLowerCase()} prepared with fresh ingredients. Perfect for a healthy meal that's both nutritious and satisfying.`
+    // Realistic data for common items
+    const foodData = {
+      prep_time: '',
+      calories: '',
+      rating: (Math.random() * 0.5 + 4.5).toFixed(1), // Rating between 4.5-5.0
+      distance: (Math.random() * 5).toFixed(1) + ' km',
+      description: `Fresh ${item.item_name.toLowerCase()} ready for preparation.`
     };
+
+    // Set preparation time and calories based on item type
+    if (itemName.includes('apple') || itemName.includes('banana') || 
+        itemName.includes('orange') || itemName.includes('grape')) {
+      foodData.prep_time = '0 min';
+      foodData.calories = '80-100 kcal';
+    } 
+    else if (itemName.includes('chicken') || itemName.includes('meat')) {
+      foodData.prep_time = '30-45 min';
+      foodData.calories = '200-300 kcal';
+    }
+    else if (itemName.includes('rice')) {
+      foodData.prep_time = '15-20 min';
+      foodData.calories = '200 kcal/cup';
+    }
+    else if (itemName.includes('pasta')) {
+      foodData.prep_time = '10-12 min';
+      foodData.calories = '220 kcal/serving';
+    }
+    else if (itemName.includes('bread')) {
+      foodData.prep_time = '0 min';
+      foodData.calories = '80 kcal/slice';
+    }
+    else if (itemName.includes('milk')) {
+      foodData.prep_time = '0 min';
+      foodData.calories = '120 kcal/cup';
+    }
+    else if (itemName.includes('egg')) {
+      foodData.prep_time = '5-10 min';
+      foodData.calories = '70 kcal/egg';
+    }
+    else if (itemName.includes('fish')) {
+      foodData.prep_time = '15-25 min';
+      foodData.calories = '150-250 kcal';
+    }
+    else if (itemName.includes('vegetable') || itemName.includes('salad')) {
+      foodData.prep_time = '5-10 min';
+      foodData.calories = '50-100 kcal';
+    }
+    else if (itemName.includes('cheese')) {
+      foodData.prep_time = '0 min';
+      foodData.calories = '110 kcal/oz';
+    }
+
+    return foodData;
   };
 
   const renderGridItem = ({ item, index }) => {
@@ -235,7 +311,7 @@ export default function PantryScreen({ navigation }) {
     );
     const hasDefaultImage = itemKey && image_url[itemKey];
 
-    const foodData = generateRandomFoodData(item);
+    const foodData = getFoodData(item);
 
     return (
       <TouchableOpacity
@@ -273,8 +349,12 @@ export default function PantryScreen({ navigation }) {
           </Text>
 
           <View style={styles.foodDetails}>
-            <Text style={styles.detailText}>{foodData.prep_time}</Text>
-            <Text style={styles.detailText}>{foodData.calories}</Text>
+            {foodData.prep_time ? (
+              <Text style={styles.detailText}>{foodData.prep_time}</Text>
+            ) : <View style={{flex: 1}} />}
+            {foodData.calories ? (
+              <Text style={styles.detailText}>{foodData.calories}</Text>
+            ) : <View style={{flex: 1}} />}
           </View>
 
           <View style={styles.ratingContainer}>
@@ -299,13 +379,13 @@ export default function PantryScreen({ navigation }) {
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
       <Text style={styles.emptyIcon}>🍽️</Text>
-      <Text style={styles.emptyTitle}>Empty</Text>
-      <Text style={styles.emptyText}>Start adding food items to see available dishes</Text>
+      <Text style={styles.emptyTitle}>Empty Pantry</Text>
+      <Text style={styles.emptyText}>Start adding items to your pantry</Text>
       <TouchableOpacity
         style={styles.addButton}
         onPress={() => navigation.navigate('AddItem')}
       >
-        <Text style={styles.addButtonText}>+ Add First Dish</Text>
+        <Text style={styles.addButtonText}>+ Add First Item</Text>
       </TouchableOpacity>
     </View>
   );
@@ -313,61 +393,58 @@ export default function PantryScreen({ navigation }) {
   const renderNoResults = () => (
     <View style={styles.noResultsContainer}>
       <Text style={styles.noResultsIcon}>🔍</Text>
-      <Text style={styles.noResultsTitle}>No dishes found</Text>
+      <Text style={styles.noResultsTitle}>No items found</Text>
       <Text style={styles.noResultsText}>Try searching for something else</Text>
     </View>
   );
 
   const renderHeader = () => (
-  <>
-    {/* Popular Dishes Section */}
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Popular items</Text>
+    <>
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Popular Items</Text>
+        </View>
+
+        {filteredItems.length > 0 ? (
+          <FlatList
+            horizontal
+            data={filteredItems.slice(0, 4)}
+            keyExtractor={(item) => `popular-${item.id}`}
+            renderItem={renderGridItem}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList}
+          />
+        ) : (
+          searchQuery.length > 0 && renderNoResults()
+        )}
       </View>
 
-      {filteredItems.length > 0 ? (
-        <FlatList
-          horizontal
-          data={filteredItems.slice(0, 4)}
-          keyExtractor={(item) => `popular-${item.id}`}
-          renderItem={renderGridItem}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalList}
-        />
-      ) : (
-        searchQuery.length > 0 && renderNoResults()
+      {filteredItems.length > 4 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Items of the Week</Text>
+          </View>
+
+          <FlatList
+            horizontal
+            data={filteredItems.slice(4, 8)}
+            keyExtractor={(item) => `recipe-${item.id}`}
+            renderItem={renderGridItem}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList}
+          />
+        </View>
       )}
-    </View>
 
-    {/* Recipe of the Week Section */}
-    {filteredItems.length > 4 && (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>item of the week</Text>
+      {filteredItems.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>All Pantry Items</Text>
+          </View>
         </View>
-
-        <FlatList
-          horizontal
-          data={filteredItems.slice(4, 8)}
-          keyExtractor={(item) => `recipe-${item.id}`}
-          renderItem={renderGridItem}
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.horizontalList}
-        />
-      </View>
-    )}
-
-    {/* All Available Dishes Heading */}
-    {filteredItems.length > 0 && (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>All Available meals/items</Text>
-        </View>
-      </View>
-    )}
-  </>
-);
+      )}
+    </>
+  );
 
   if (loading) {
     return (
@@ -375,7 +452,7 @@ export default function PantryScreen({ navigation }) {
         <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading dishes...</Text>
+          <Text style={styles.loadingText}>Loading pantry items...</Text>
         </View>
       </SafeAreaView>
     );
@@ -385,7 +462,6 @@ export default function PantryScreen({ navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
 
-      {/* Header with search */}
       <View style={styles.headerContainer}>
         <View style={styles.searchContainer}>
           <Text style={styles.searchIcon}>🔍</Text>
@@ -393,7 +469,7 @@ export default function PantryScreen({ navigation }) {
             style={styles.searchInput}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search dishes"
+            placeholder="Search pantry items"
             placeholderTextColor="#999"
           />
           {searchQuery.length > 0 && (
@@ -407,31 +483,29 @@ export default function PantryScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Main content */}
       <FlatList
-  ListHeaderComponent={renderHeader}
-  data={filteredItems.length > 0 ? filteredItems : []}
-  keyExtractor={(item) => `all-${item.id}`}
-  renderItem={renderGridItem}
-  numColumns={2}
-  columnWrapperStyle={styles.row}
-  contentContainerStyle={styles.gridList}
-  refreshControl={
-    <RefreshControl
-      refreshing={refreshing}
-      onRefresh={onRefresh}
-      colors={['#4CAF50']}
-      tintColor="#4CAF50"
-    />
-  }
-  ListEmptyComponent={
-    filteredItems.length === 0 && searchQuery.trim() === '' 
-      ? renderEmptyState() 
-      : null
-  }
-/>
+        ListHeaderComponent={renderHeader}
+        data={filteredItems.length > 0 ? filteredItems : []}
+        keyExtractor={(item) => `all-${item.id}`}
+        renderItem={renderGridItem}
+        numColumns={2}
+        columnWrapperStyle={styles.row}
+        contentContainerStyle={styles.gridList}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4CAF50']}
+            tintColor="#4CAF50"
+          />
+        }
+        ListEmptyComponent={
+          filteredItems.length === 0 && searchQuery.trim() === '' 
+            ? renderEmptyState() 
+            : null
+        }
+      />
 
-      {/* Floating Action Button */}
       <TouchableOpacity
         style={styles.fab}
         onPress={() => navigation.navigate('AddItem')}
@@ -586,6 +660,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
+    minHeight: 20,
   },
   detailText: {
     fontSize: 12,
@@ -601,10 +676,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   statusBadge: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 10,
-    alignSelf: 'flex-start',
   },
   expiredBadge: {
     backgroundColor: '#f44336',
