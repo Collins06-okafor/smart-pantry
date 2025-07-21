@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { registerForPushNotificationsAsync } from '../lib/notifications';
 import * as Location from 'expo-location';
 
 export default function Signup({ navigation }) {
@@ -100,6 +101,16 @@ export default function Signup({ navigation }) {
       const user = data?.user;
       if (user) {
         await insertProfile(user, email, name, surname);
+        
+        // Register for push notifications after successful signup
+        try {
+          const token = await registerForPushNotificationsAsync(user.id);
+          console.log('Push notification token registered for new user:', token);
+        } catch (notificationError) {
+          console.warn('Failed to register for push notifications:', notificationError);
+          // Don't block signup if notification registration fails
+        }
+        
         Alert.alert('Success', 'Account created successfully!', [
           {
             text: 'OK',

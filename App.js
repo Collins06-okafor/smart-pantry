@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -34,6 +34,8 @@ import BarcodeScannerScreen from './screens/BarcodeScannerScreen';
 import UserListScreen from './screens/UserListScreen';
 import ConversationListScreen from './screens/ConversationListScreen';  
 import OffersScreen from './screens/OffersScreen';
+import NotificationsScreen from './screens/NotificationsScreen';
+
 
 // --- Add ThemeContext import ---
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -120,6 +122,8 @@ function MainTabsStack() {
 
 // Main App Stack
 export default function App() {
+  const navigationRef = useRef();
+
   useEffect(() => {
     console.log('Using JS engine:', global.HermesInternal ? 'Hermes' : 'JSC');
   }, []);
@@ -135,12 +139,20 @@ export default function App() {
     // Listen for notifications received while app is foregrounded
     const receivedListener = Notifications.addNotificationReceivedListener(notification => {
       console.log('🔔 Notification received:', notification);
+      // You can show an alert or update UI based on the notification
     });
 
     // Listen for when user taps the notification
     const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('🟢 User interacted with notification:', response);
-      // Optional: Navigate to a screen or handle deep linking here
+      const { screen, offerId, requestId } = response.notification.request.content.data;
+      
+      if (screen && navigationRef.current) {
+        navigationRef.current.navigate(screen, { 
+          offerId, 
+          requestId 
+        });
+      }
     });
 
     // Cleanup listeners on unmount
@@ -153,7 +165,7 @@ export default function App() {
   // --- Wrap app in ThemeProvider ---
   return (
     <ThemeProvider>
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator initialRouteName="Landing">
           <Stack.Screen name="Landing" component={LandingPage} options={{ headerShown: false }} />
           <Stack.Screen name="Login" component={Login} options={{ headerShown: false }} />
@@ -177,6 +189,7 @@ export default function App() {
           <Stack.Screen name="ConversationList" component={ConversationListScreen} />
 <Stack.Screen name="UserList" component={UserListScreen} />
 <Stack.Screen name="Offers" component={OffersScreen} />
+<Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
 
 
         </Stack.Navigator>

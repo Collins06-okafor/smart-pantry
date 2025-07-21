@@ -7,10 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
-  Package, AlertTriangle, Trash2, LogOut, RefreshCw, Search,
+  Package, AlertTriangle, Trash2, LogOut, Bell, Search,
   Plus, ChefHat, UserPlus, History, BarChart3, Users, User
 } from 'lucide-react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNotifications } from '../hooks/useNotifications';
 
 const COLORS = {
   primary: '#00C897',
@@ -39,6 +40,8 @@ export default function DashboardScreen() {
     expiringSoon: [],
     discardedStats: { thisMonth: 0, total: 0 }
   });
+  
+  const { unreadCount } = useNotifications();
 
   const handleSearch = () => {
     if (!searchQuery.trim()) return;
@@ -232,9 +235,21 @@ export default function DashboardScreen() {
               )}
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={onRefresh} style={styles.iconButton}>
-              <RefreshCw size={20} color={COLORS.gray} />
-            </TouchableOpacity>
+            {/* Notification Button */}
+            <TouchableOpacity 
+  onPress={() => navigation.navigate('Notifications')} 
+  style={[styles.iconButton, { position: 'relative' }]}
+>
+  <Bell size={20} color={COLORS.gray} />
+  {unreadCount > 0 && (
+    <View style={styles.notificationBadge}>
+      <Text style={styles.notificationBadgeText}>
+        {unreadCount > 9 ? '9+' : unreadCount}
+      </Text>
+    </View>
+  )}
+</TouchableOpacity>
+
             <TouchableOpacity onPress={handleLogout} style={[styles.iconButton, { backgroundColor: '#FDEDED' }]}>
               <LogOut size={20} color={COLORS.red} />
             </TouchableOpacity>
@@ -449,6 +464,22 @@ const styles = StyleSheet.create({
   badgeText: {
     color: COLORS.white,
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  notificationBadge: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    backgroundColor: COLORS.red,
+    borderRadius: 10,
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notificationBadgeText: {
+    color: COLORS.white,
+    fontSize: 10,
     fontWeight: 'bold',
   },
 });

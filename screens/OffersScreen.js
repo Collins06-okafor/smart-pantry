@@ -19,6 +19,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { sendPushNotification } from '../lib/notifications';
 import { registerForPushNotificationsAsync } from '../lib/notifications'; // Assuming this function exists
 
 const OFFER_STATUSES = {
@@ -240,29 +241,18 @@ export default function OffersScreen({ navigation }) {
 
   // Placeholder for sendPushNotification - you need to implement this
   const sendPushNotification = async (token, title, body) => {
-    // This is a placeholder. You would typically use Expo's Push Notification API
-    // or a similar service here.
-    console.log(`Sending push notification to ${token}: ${title} - ${body}`);
-    // Example using Expo's push notification service:
-    /*
-    const message = {
-      to: token,
-      sound: 'default',
-      title,
-      body,
-      data: { someData: 'goes here' },
-    };
-    await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(message),
+  if (!token) return;
+  
+  try {
+    await sendPushNotification(token, title, body, {
+      screen: 'ConversationListScreen', // Or wherever you want to navigate
+      offerId: selectedOffer?.id,
+      requestId: selectedRequest?.id
     });
-    */
-  };
+  } catch (error) {
+    console.warn('Push notification error:', error);
+  }
+};
 
   // Handle offer response and delete offer after response
   const handleOfferResponse = async (offerId, status, message = '', request) => {

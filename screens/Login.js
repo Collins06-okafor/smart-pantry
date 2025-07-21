@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, StatusBar, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { registerForPushNotificationsAsync } from '../lib/notifications';
+
 
 export default function Login({ navigation }) {
   const [email, setEmail] = useState('');
@@ -10,37 +12,48 @@ export default function Login({ navigation }) {
   const [secureEntry, setSecureEntry] = useState(true);
 
   const handleLogin = async () => {
-  if (!email || !password) {
-    Alert.alert('Error', 'Please fill in all fields');
-    return;
-  }
+    if (!email || !password) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
 
-  setLoading(true);
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    // Optional: Fetch profile (in case you need it later)
-    const user = data.user;
-    await supabase
-      .from('profile')
-      .select('city, address, latitude, longitude')
-      .eq('id', user.id)
-      .single();
+      // Get user and register for push notifications
+      const user = data.user;
+      
+      // Register for push notifications after successful login
+      try {
+        const token = await registerForPushNotificationsAsync(user.id);
+        console.log('Push notification token registered:', token);
+      } catch (notificationError) {
+        console.warn('Failed to register for push notifications:', notificationError);
+        // Don't block login if notification registration fails
+      }
 
-    // Navigate directly to MainTabs (Dashboard)
-    navigation.replace('MainTabs');
+      // Optional: Fetch profile (in case you need it later)
+      await supabase
+        .from('profile')
+        .select('city, address, latitude, longitude')
+        .eq('id', user.id)
+        .single();
 
-  } catch (error) {
-    Alert.alert('Login Error', error.message || 'An error occurred during login');
-  } finally {
-    setLoading(false);
-  }
-};
+      // Navigate directly to MainTabs (Dashboard)
+      navigation.replace('MainTabs');
+
+    } catch (error) {
+      Alert.alert('Login Error', error.message || 'An error occurred during login');
+    } finally {
+      setLoading(false);
+    }
+  };
 
 
   return (
