@@ -33,24 +33,47 @@ export default function RequestFoodScreen({ navigation, route }) {
     fetchMyRequests();
   }, []);
 
-  const fetchMyRequests = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  // In the useEffect for real-time updates, add error handling:
+useEffect(() => {
+  const channel = supabase
+    .channel('my_requests_changes')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'food_requests'
+    }, (payload) => {
+      console.log('Change received:', payload);
+      fetchMyRequests();
+    })
+    .subscribe()
+    .on('error', (error) => {
+      console.error('Channel error:', error);
+    });
 
-      const { data, error } = await supabase
-        .from('food_requests')
-        .select('*')
-        .eq('requester_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setMyRequests(data || []);
-    } catch (err) {
-      console.error('Error fetching requests:', err);
-      Alert.alert('Error', 'Failed to fetch your requests');
-    }
+  return () => {
+    supabase.removeChannel(channel);
   };
+}, [fetchMyRequests]);
+
+ const fetchMyRequests = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const { data, error } = await supabase
+      .from('food_requests')
+      .select('*')
+      .eq('requester_id', user.id)
+      .eq('status', 'active') // Only show active requests
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    setMyRequests(data || []);
+  } catch (err) {
+    console.error('Error fetching requests:', err);
+    Alert.alert('Error', 'Failed to fetch your requests');
+  }
+};
 
   const handleSubmit = async () => {
     if (!itemName.trim()) {

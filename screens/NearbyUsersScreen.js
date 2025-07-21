@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, Platform, TouchableOpacity, Modal, FlatList } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, Platform, TouchableOpacity, Modal, FlatList, ScrollView } from 'react-native';
 import * as Location from 'expo-location';
 import MapView, { Marker } from 'react-native-maps';
 import { supabase } from '../lib/supabase';
@@ -7,12 +7,15 @@ import { supabase } from '../lib/supabase';
 const { width, height } = Dimensions.get('window');
 const DISTANCE_OPTIONS = [0.5, 1, 2, 5, 10, 15, 25];
 
-const NearbyUsersScreen = () => {
+const NearbyUsersScreen = ({ navigation }) => {
   const [location, setLocation] = useState(null);
   const [radiusKm, setRadiusKm] = useState(2);
   const [dropdownVisible, setDropdownVisible] = useState(false);
   const [nearbyUsers, setNearbyUsers] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [mapRegion, setMapRegion] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const mapRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -34,11 +37,13 @@ const NearbyUsersScreen = () => {
         // Get current user
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
+        
+        setCurrentUserId(user.id);
 
         // Query profile table for users with location data
         const { data: profilesData, error: profilesError } = await supabase
           .from('profile')
-          .select('id, name, latitude, longitude')
+          .select('id, name, surname, latitude, longitude, avatar_url')
           .neq('id', user.id) // Exclude current user
           .not('latitude', 'is', null) // Only users with location data
           .not('longitude', 'is', null)
@@ -65,20 +70,49 @@ const NearbyUsersScreen = () => {
         }).map(profile => ({
           id: profile.id,
           name: profile.name || 'Unknown User',
+          surname: profile.surname,
+          avatar_url: profile.avatar_url,
           latitude: profile.latitude,
-          longitude: profile.longitude
-        }));
+          longitude: profile.longitude,
+          distance: calculateDistance(
+            location.latitude,
+            location.longitude,
+            profile.latitude,
+            profile.longitude
+          )
+        }))
+        .sort((a, b) => a.distance - b.distance); // Sort by distance
 
         setNearbyUsers(usersWithinRadius);
 
-        // For development/testing, you can uncomment this to add mock users when no real users are found:
-        // if (usersWithinRadius.length === 0) {
-        //   setNearbyUsers([
-        //     { id: '1', name: 'Alice', latitude: location.latitude + 0.01, longitude: location.longitude + 0.01 },
-        //     { id: '2', name: 'Bob', latitude: location.latitude - 0.01, longitude: location.longitude - 0.01 },
-        //     { id: '3', name: 'Charlie', latitude: location.latitude + 0.005, longitude: location.longitude - 0.007 },
-        //   ]);
-        // }
+        // Calculate map region to fit all users
+        if (usersWithinRadius.length > 0) {
+          const allLats = [location.latitude, ...usersWithinRadius.map(u => u.latitude)];
+          const allLngs = [location.longitude, ...usersWithinRadius.map(u => u.longitude)];
+          
+          const minLat = Math.min(...allLats);
+          const maxLat = Math.max(...allLats);
+          const minLng = Math.min(...allLngs);
+          const maxLng = Math.max(...allLngs);
+          
+          const deltaLat = (maxLat - minLat) * 1.5; // Add padding
+          const deltaLng = (maxLng - minLng) * 1.5;
+          
+          setMapRegion({
+            latitude: (minLat + maxLat) / 2,
+            longitude: (minLng + maxLng) / 2,
+            latitudeDelta: Math.max(deltaLat, 0.01), // Minimum zoom level
+            longitudeDelta: Math.max(deltaLng, 0.01),
+          });
+        } else {
+          // Default region when no users found
+          setMapRegion({
+            latitude: location.latitude,
+            longitude: location.longitude,
+            latitudeDelta: radiusKm / 50, // Adjust zoom based on radius
+            longitudeDelta: radiusKm / 50,
+          });
+        }
 
       } catch (err) {
         setErrorMsg('Error fetching nearby users');
@@ -103,13 +137,34 @@ const NearbyUsersScreen = () => {
     return R * c;
   };
 
+  const fitAllMarkers = () => {
+    if (mapRef.current && nearbyUsers.length > 0) {
+      const coordinates = [
+        { latitude: location.latitude, longitude: location.longitude },
+        ...nearbyUsers.map(user => ({ latitude: user.latitude, longitude: user.longitude }))
+      ];
+      
+      mapRef.current.fitToCoordinates(coordinates, {
+        edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+        animated: true,
+      });
+    }
+  };
+
+  const renderUserItem = ({ item }) => (
+    <TouchableOpacity style={styles.userItem}>
+      <View style={styles.userInfo}>
+        <Text style={styles.userName}>{item.surname || item.name}</Text>
+        <Text style={styles.userDistance}>{item.distance.toFixed(1)} km away</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
   if (errorMsg) return <View style={styles.center}><Text>{errorMsg}</Text></View>;
   if (!location) return <View style={styles.center}><Text>Fetching location...</Text></View>;
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-
       {/* Map */}
       <MapView
         style={styles.map}
@@ -120,35 +175,61 @@ const NearbyUsersScreen = () => {
           longitudeDelta: 0.05,
         }}
         showsUserLocation
+        clusteringEnabled={true}
+        clusterColor="#00C897"
+        clusterTextColor="#fff"
+        clusterFontFamily="System"
       >
-        {/* Only render markers when there are nearby users */}
-        {nearbyUsers.length > 0 && nearbyUsers.map(user => (
-          <Marker
-            key={user.id}
-            coordinate={{ latitude: user.latitude, longitude: user.longitude }}
-            title={user.name}
-            description={`Distance: ${calculateDistance(location.latitude, location.longitude, user.latitude, user.longitude).toFixed(1)} km`}
-          />
-        ))}
+        {/* Render all markers with slight position adjustments to prevent overlap */}
+        {nearbyUsers.length > 0 && nearbyUsers.map((user, index) => {
+          // Add small random offset to prevent exact overlap
+          const offsetLat = user.latitude + (Math.random() - 0.5) * 0.0001;
+          const offsetLng = user.longitude + (Math.random() - 0.5) * 0.0001;
+          
+          return (
+            <Marker
+              key={user.id}
+              coordinate={{ 
+                latitude: offsetLat, 
+                longitude: offsetLng 
+              }}
+              title={user.surname || user.name}
+              description={`Distance: ${user.distance.toFixed(1)} km`}
+              pinColor={index < 5 ? '#00C897' : '#FF6B6B'} // Different colors for first 5 users
+            />
+          );
+        })}
       </MapView>
 
-      {/* Info Box */}
-      <View style={styles.infoBox}>
-        <Text style={styles.subText}>Showing users nearest to you (max 50 shown)</Text>
-        <Text style={styles.mainText}>Other users near you</Text>
-        <Text style={styles.countText}>{nearbyUsers.length}</Text>
+      {/* Info and Users List */}
+      <View style={styles.bottomSection}>
+        <View style={styles.infoHeader}>
+          <Text style={styles.subText}>Showing users nearest to you (max 50 shown)</Text>
+          <Text style={styles.mainText}>Other users near you</Text>
+          <Text style={styles.countText}>{nearbyUsers.length}</Text>
 
-        {/* Show message when no users are found */}
-        {nearbyUsers.length === 0 && (
-          <Text style={styles.noUsersText}>
-            No users found within {radiusKm} km of your location
-          </Text>
+          {/* Distance Selector */}
+          <TouchableOpacity onPress={() => setDropdownVisible(true)} style={styles.dropdownButton}>
+            <Text style={styles.dropdownText}>Search distance: {radiusKm} km ▼</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Users List */}
+        {nearbyUsers.length === 0 ? (
+          <View style={styles.noUsersContainer}>
+            <Text style={styles.noUsersText}>
+              No users found within {radiusKm} km of your location
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={nearbyUsers}
+            keyExtractor={(item) => item.id}
+            renderItem={renderUserItem}
+            style={styles.usersList}
+            showsVerticalScrollIndicator={false}
+          />
         )}
-
-        {/* Distance Selector */}
-        <TouchableOpacity onPress={() => setDropdownVisible(true)} style={styles.dropdownButton}>
-          <Text style={styles.dropdownText}>Search distance: {radiusKm} km ▼</Text>
-        </TouchableOpacity>
 
         {/* Dropdown Modal */}
         <Modal visible={dropdownVisible} transparent animationType="slide">
@@ -174,7 +255,6 @@ const NearbyUsersScreen = () => {
             </View>
           </View>
         </Modal>
-
       </View>
     </View>
   );
@@ -182,24 +262,17 @@ const NearbyUsersScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  map: { width, height: height * 0.5 },
+  map: { width, height: height * 0.4 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: {
-    height: 60,
-    paddingTop: Platform.OS === 'ios' ? 40 : 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  infoBox: {
+  bottomSection: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  infoHeader: {
     alignItems: 'center',
     padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
   subText: {
     fontSize: 12,
@@ -217,13 +290,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginVertical: 20,
   },
-  noUsersText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 10,
-    fontStyle: 'italic',
-  },
   dropdownButton: {
     marginTop: 10,
     borderBottomWidth: 1,
@@ -234,17 +300,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#444',
   },
-  ctaButton: {
-    backgroundColor: '#00C897',
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 50,
-    marginTop: 30,
+  noUsersContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  ctaText: {
-    color: '#fff',
+  noUsersText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  usersList: {
+    flex: 1,
+  },
+  userItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+  },
+  userInfo: {
+    flex: 1,
+  },
+  userName: {
     fontSize: 16,
     fontWeight: '600',
+    color: '#333',
+  },
+  userDistance: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
   },
   modalOverlay: {
     flex: 1,
@@ -270,6 +361,25 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     fontSize: 16,
     color: '#00C897',
+    fontWeight: '600',
+  },
+  fitMarkersButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    right: 20,
+    backgroundColor: '#00C897',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  fitMarkersText: {
+    color: '#fff',
+    fontSize: 12,
     fontWeight: '600',
   },
 });

@@ -3,6 +3,9 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, StyleSheet } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import { supabase } from './lib/supabase';
+import { registerForPushNotificationsAsync } from './lib/notifications';
 
 import {
   Home, Package, PlusCircle, Utensils, Settings
@@ -30,6 +33,7 @@ import FoodDetailsScreen from './screens/FoodDetailsScreen';
 import BarcodeScannerScreen from './screens/BarcodeScannerScreen';
 import UserListScreen from './screens/UserListScreen';
 import ConversationListScreen from './screens/ConversationListScreen';  
+import OffersScreen from './screens/OffersScreen';
 
 // --- Add ThemeContext import ---
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -120,6 +124,32 @@ export default function App() {
     console.log('Using JS engine:', global.HermesInternal ? 'Hermes' : 'JSC');
   }, []);
 
+  useEffect(() => {
+    // Register for push notifications
+    registerForPushNotificationsAsync().then(token => {
+      if (token) {
+        // Save token to Supabase or backend here if needed
+      }
+    });
+
+    // Listen for notifications received while app is foregrounded
+    const receivedListener = Notifications.addNotificationReceivedListener(notification => {
+      console.log('🔔 Notification received:', notification);
+    });
+
+    // Listen for when user taps the notification
+    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('🟢 User interacted with notification:', response);
+      // Optional: Navigate to a screen or handle deep linking here
+    });
+
+    // Cleanup listeners on unmount
+    return () => {
+      receivedListener.remove();
+      responseListener.remove();
+    };
+  }, []);
+
   // --- Wrap app in ThemeProvider ---
   return (
     <ThemeProvider>
@@ -146,6 +176,7 @@ export default function App() {
           <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
           <Stack.Screen name="ConversationList" component={ConversationListScreen} />
 <Stack.Screen name="UserList" component={UserListScreen} />
+<Stack.Screen name="Offers" component={OffersScreen} />
 
 
         </Stack.Navigator>

@@ -21,6 +21,8 @@ import { useNavigation } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../contexts/ThemeContext';
+import { registerForPushNotificationsAsync } from '../lib/notifications';
+
 
 const { width } = Dimensions.get('window');
 
@@ -353,6 +355,21 @@ export default function ProfileScreen() {
     loadProfile();
     fetchWasteStats();
   }, [loadProfile, fetchWasteStats]);
+
+  useEffect(() => {
+  (async () => {
+    const token = await registerForPushNotificationsAsync();
+
+    if (token) {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      await supabase
+        .from('profile')
+        .update({ push_token: token })
+        .eq('id', user.id);
+    }
+  })();
+}, []);
 
   // Email verification
   const sendVerificationEmail = async () => {

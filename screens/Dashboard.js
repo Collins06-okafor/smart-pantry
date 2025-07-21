@@ -5,11 +5,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import {
   Package, AlertTriangle, Trash2, LogOut, RefreshCw, Search,
   Plus, ChefHat, UserPlus, History, BarChart3, Users, User
 } from 'lucide-react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 const COLORS = {
   primary: '#00C897',
@@ -29,6 +30,7 @@ export default function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [pendingOffersCount, setPendingOffersCount] = useState(0);
   const [dashboardData, setDashboardData] = useState({
     name: '',
     email: '',
@@ -47,41 +49,56 @@ export default function DashboardScreen() {
   const getNameFromEmail = (email) => {
     if (!email) return '';
     
-    const localPart = email.split('@')[0]; // 'john.doe'
-    const nameParts = localPart.split(/[._-]/); // Split by dot, underscore, or hyphen
-    
-    // Filter out empty parts and numbers, then capitalize each part
+    const localPart = email.split('@')[0];
+    const nameParts = localPart.split(/[._-]/);
     const validParts = nameParts.filter(part => part.length > 0 && !(/^\d+$/.test(part)));
     
     return validParts.map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
   };
 
-  const fetchData = async () => {
+  const fetchPendingOffersCount = async (userId) => {
     try {
-      setLoading(true);
+      const { data, error } = await supabase
+        .from('food_request_offers')
+        .select('id', { count: 'exact' })
+        .eq('request_id', userId)
+        .eq('status', 'pending');
+
+      if (error) throw error;
+      return data ? data.length : 0;
+    } catch (error) {
+      console.error('Error fetching pending offers:', error);
+      return 0;
+    }
+  };
+
+  const fetchData = async (showLoading = false) => {
+    try {
+      if (showLoading) {
+        setLoading(true);
+      }
+      
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (!user || userError) {
         console.error('User not found');
         return;
       }
 
-      const [profileResult, pantryResult, discardedResult] = await Promise.all([
+      const [profileResult, pantryResult, discardedResult, offersCount] = await Promise.all([
         supabase.from('profile').select('name, first_name, last_name, profile_photo_url').eq('id', user.id).single(),
         supabase.from('pantry_items').select('*').eq('user_id', user.id),
-        supabase.from('discarded_items').select('timestamp, item_id').eq('user_id', user.id), // Include item_id to filter out discarded items
+        supabase.from('discarded_items').select('timestamp, item_id').eq('user_id', user.id),
+        fetchPendingOffersCount(user.id)
       ]);
+
+      setPendingOffersCount(offersCount);
 
       const profile = profileResult.data;
       const pantryItems = pantryResult.data || [];
       const discardedItems = discardedResult.data || [];
-
-      // Get IDs of discarded items to filter them out from pantry count
       const discardedItemIds = new Set(discardedItems.map(item => item.item_id));
-      
-      // Filter out discarded items from pantry items
       const activePantryItems = pantryItems.filter(item => !discardedItemIds.has(item.id));
 
-      // Get full name - priority: full name field, then first+last, then email parsing
       let fullName = '';
       if (profile?.name) {
         fullName = profile.name;
@@ -91,18 +108,9 @@ export default function DashboardScreen() {
         fullName = getNameFromEmail(user.email);
       }
       
-      // Debug logging
-      console.log('Profile data:', profile);
-      console.log('User email:', user.email);
-      console.log('Final fullName:', fullName);
-      console.log('Total pantry items:', pantryItems.length);
-      console.log('Discarded items:', discardedItems.length);
-      console.log('Active pantry items:', activePantryItems.length);
-
       const today = new Date();
       const in3Days = new Date(today.getTime() + 3 * 86400000);
       
-      // Use active pantry items for expiring soon calculation
       const expiringSoon = activePantryItems.filter(item => {
         if (!item.expiration_date) return false;
         const expDate = new Date(item.expiration_date);
@@ -115,12 +123,11 @@ export default function DashboardScreen() {
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
       }).length;
 
-      // Set dashboard data ONCE with all the correct values
       setDashboardData({
         name: fullName,
         email: user.email,
         profilePhotoUrl: profile?.profile_photo_url,
-        pantryCount: activePantryItems.length, // Use active items count instead of all items
+        pantryCount: activePantryItems.length,
         expiringSoon,
         discardedStats: {
           thisMonth: thisMonthCount,
@@ -136,34 +143,50 @@ export default function DashboardScreen() {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchData();
+  // Initial load
+  useEffect(() => { 
+    fetchData(true); 
   }, []);
 
-  useEffect(() => {
-  const channel = supabase
-    .channel('pantry_items_updates')
-    .on(
-      'postgres_changes',
-      {
-        event: '*', // Listen to INSERT, UPDATE, DELETE
-        schema: 'public',
-        table: 'pantry_items'
-      },
-      (payload) => {
-        console.log('Pantry change detected:', payload);
-        fetchData(); // Re-fetch dashboard data when pantry items change
+  // Auto-refresh when screen comes into focus (navigating back)
+  useFocusEffect(
+    useCallback(() => {
+      // Only refresh if it's not the initial load
+      if (!loading) {
+        console.log('Dashboard screen focused - refreshing data');
+        fetchData(false);
       }
-    )
-    .subscribe();
+    }, [loading])
+  );
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, []);
+  // Pull-to-refresh handler
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData(false);
+  }, []);
 
+  // Real-time updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('pantry_items_updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pantry_items'
+        },
+        (payload) => {
+          console.log('Pantry change detected:', payload);
+          fetchData(false);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -251,17 +274,15 @@ export default function DashboardScreen() {
           <QuickAction icon={<ChefHat size={24} />} label="Recipes" onPress={() => navigation.navigate('Recipes')} />
           <QuickAction icon={<UserPlus size={24} />} label="Share" onPress={() => navigation.navigate('Share')} />
           <QuickAction 
-  icon={<Users size={24} />} 
-  label="Chats" 
-  onPress={() => navigation.navigate('ConversationList')} 
-/>
-
-<QuickAction 
-  icon={<UserPlus size={24} />} 
-  label="New Chat" 
-  onPress={() => navigation.navigate('UserList')} 
-/>
-
+            icon={<Users size={24} />} 
+            label="Chats" 
+            onPress={() => navigation.navigate('ConversationList')} 
+          />
+          <QuickAction 
+            icon={<UserPlus size={24} />} 
+            label="New Chat" 
+            onPress={() => navigation.navigate('UserList')} 
+          />
         </View>
 
         {/* Expiring Soon */}
@@ -288,9 +309,31 @@ export default function DashboardScreen() {
 
         {/* Extra Options */}
         <View style={styles.extraCards}>
-          <ExtraCard icon={<History size={22} color={COLORS.blue} />} title="Discarded History" subtitle="View discarded items" onPress={() => navigation.navigate('DiscardedItems')} />
-          <ExtraCard icon={<BarChart3 size={22} color="#6f42c1" />} title="Waste Stats" subtitle="Track food waste" onPress={() => navigation.navigate('WasteStats')} />
-          <ExtraCard icon={<Users size={22} color={COLORS.orange} />} title="Nearby Users" subtitle="Connect with others" onPress={() => navigation.navigate('NearbyUsers')} />
+          <ExtraCard 
+            icon={<History size={22} color={COLORS.blue} />} 
+            title="Discarded History" 
+            subtitle="View discarded items" 
+            onPress={() => navigation.navigate('DiscardedItems')} 
+          />
+          <ExtraCard 
+            icon={<BarChart3 size={22} color="#6f42c1" />} 
+            title="Waste Stats" 
+            subtitle="Track food waste" 
+            onPress={() => navigation.navigate('WasteStats')} 
+          />
+          <ExtraCard 
+            icon={<Users size={22} color={COLORS.orange} />} 
+            title="Nearby Users" 
+            subtitle="Connect with others" 
+            onPress={() => navigation.navigate('NearbyUsers')} 
+          />
+          <ExtraCard 
+            icon={<Ionicons name="hand-left" size={22} color="#4CAF50" />} 
+            title="My Offers" 
+            subtitle="View food offers" 
+            onPress={() => navigation.navigate('Offers')} 
+            badgeCount={pendingOffersCount}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -321,11 +364,18 @@ const QuickAction = ({ icon, label, onPress, green = false }) => (
   </TouchableOpacity>
 );
 
-const ExtraCard = ({ icon, title, subtitle, onPress }) => (
+const ExtraCard = ({ icon, title, subtitle, onPress, badgeCount = 0 }) => (
   <TouchableOpacity style={styles.extraCard} onPress={onPress}>
     {icon}
-    <View>
-      <Text style={styles.extraTitle}>{title}</Text>
+    <View style={{ flex: 1 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={styles.extraTitle}>{title}</Text>
+        {badgeCount > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{badgeCount}</Text>
+          </View>
+        )}
+      </View>
       <Text style={styles.extraSubtitle}>{subtitle}</Text>
     </View>
   </TouchableOpacity>
@@ -348,16 +398,15 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary, 
     justifyContent: 'center', 
     alignItems: 'center',
-    overflow: 'hidden', // Important for circular image
+    overflow: 'hidden',
   },
   profileImage: {
-  width: 36,
-  height: 36,
-  borderRadius: 18,
-  borderWidth: 1,
-  borderColor: '#fff',
-},
-
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#fff',
+  },
   actions: { flexDirection: 'row', gap: 10 },
   iconButton: { padding: 10, borderRadius: 999, backgroundColor: '#eee' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eee', borderRadius: 20, padding: 10, marginBottom: 20 },
@@ -390,4 +439,16 @@ const styles = StyleSheet.create({
   emoji: { fontSize: 28, marginRight: 12 },
   itemName: { fontSize: 16, fontWeight: '600', color: COLORS.text },
   itemSub: { fontSize: 13, color: COLORS.gray },
+  badge: {
+    backgroundColor: COLORS.red,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginLeft: 8,
+  },
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
 });

@@ -119,7 +119,7 @@ const useShareData = (currentUser) => {
         profile!food_requests_requester_id_fkey(name)
       `)
       .neq('requester_id', currentUser.id)
-      .eq('status', STATUSES.ACTIVE)
+      .eq('status', STATUSES.ACTIVE) // Only show active requests
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -465,28 +465,40 @@ export default function ShareScreen({ navigation, route }) {
   );
 
   useEffect(() => {
-    const channel = supabase
-      .channel('shared_items_changes')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'shared_items',
-      }, () => {
-        refreshAllData();
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'food_requests',
-      }, () => {
-        refreshAllData();
-      })
-      .subscribe();
+  const channel = supabase
+    .channel('food_requests_changes')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'food_requests'
+    }, () => {
+      refreshAllData();
+    })
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [refreshAllData]);
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [refreshAllData]);
+
+  useEffect(() => {
+  const channel = supabase
+    .channel('shared_items_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_items' }, () => {
+      refreshAllData();
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'food_requests' }, () => {
+      refreshAllData();
+    })
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel); // ✅ works (latest SDK)
+    // OR
+    // channel.unsubscribe(); // ✅ also valid
+  };
+}, [refreshAllData]);
+
 
   // Action handlers
   const handleRequestItem = useCallback(async (sharedItemId) => {
