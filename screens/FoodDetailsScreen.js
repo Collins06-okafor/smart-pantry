@@ -19,18 +19,15 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import DiscardItemModal from './DiscardItemModal';
-import NetInfo from '@react-native-community/netinfo';
-import { uploadFoodImage } from '../utils/uploadFoodImage';
-import * as FileSystem from 'expo-file-system';
 
 const { width, height } = Dimensions.get('window');
 
 // Helper to get emoji for item name (used in ImageWithFallback)
 const getItemEmoji = (name) => {
   if (!name) return '❓';
-  
+ 
   const lower = name.toLowerCase();
-  
+ 
   if (lower.includes('apple')) return '🍎';
   if (lower.includes('banana')) return '🍌';
   if (lower.includes('bread')) return '🍞';
@@ -45,11 +42,11 @@ const getItemEmoji = (name) => {
   if (lower.includes('rice')) return '🍚';
   if (lower.includes('pasta')) return '🍝';
   if (lower.includes('avocado')) return '🥑';
-  
+ 
   return '🍽️'; // default
 };
 
-// Local image assets for common food items (replace with your actual paths)
+// Local image assets for common food items
 const foodImages = {
   'apple': require('../assets/images/apple.png'),
   'banana': require('../assets/images/banana.png'),
@@ -74,18 +71,18 @@ const UNIT_OPTIONS = [
 ];
 
 // Image component with fallback logic
-const ImageWithFallback = ({ 
-  imageUrl, 
-  localImage, 
-  itemName, 
-  style, 
-  onImageError, 
-  ...props 
+const ImageWithFallback = ({
+  imageUrl,
+  localImage,
+  itemName,
+  style,
+  onImageError,
+  ...props
 }) => {
   const [currentImageUrl, setCurrentImageUrl] = useState(imageUrl);
   const [hasError, setHasError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  
+ 
   useEffect(() => {
     setCurrentImageUrl(imageUrl);
     setHasError(false);
@@ -162,9 +159,9 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     daysLeft: 30
   };
 
-  const { 
-    foodItem = mockFoodItem, 
-    expirationStatus = mockExpirationStatus, 
+  const {
+    foodItem = mockFoodItem,
+    expirationStatus = mockExpirationStatus,
     onItemUpdated,
     onItemDeleted,
     onItemDiscarded
@@ -186,7 +183,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [selectedImageUri, setSelectedImageUri] = useState(null);
-  
+ 
   const quantityInputRef = useRef(null);
   const expirationInputRef = useRef(null);
   const descriptionInputRef = useRef(null);
@@ -195,7 +192,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
   useEffect(() => {
     const getUserId = async () => {
       try {
-        const user = { id: 'mock-user-id-123' }; 
+        const { data: { user } } = await supabase.auth.getUser();
         if (user?.id) {
           setUserId(user.id);
         }
@@ -222,7 +219,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
 
   const isExpired = expirationStatus.status === 'expired';
   const isExpiring = expirationStatus.status === 'expiring';
-  
+ 
   // Fix: Safely get local image with error handling
   const getLocalImage = (itemName) => {
     if (!itemName) return null;
@@ -234,46 +231,95 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       return null;
     }
   };
-  
+ 
   const localImage = getLocalImage(currentItem.item_name);
 
-  const deleteOldFoodImage = async (imageUrl) => {
-    if (!imageUrl || imageUrl.startsWith('file://')) return; 
+  // FIXED: Improved image upload function
+  const uploadFoodItemImage = async (imageUri, userId, itemId) => {
+    if (!imageUri || !userId) {
+      throw new Error('Image URI or User ID missing');
+    }
 
     try {
-      console.log('Mock: Deleting old food image:', imageUrl);
+      console.log('Starting upload for:', imageUri);
+     
+      // Create filename with proper extension
+      const timestamp = Date.now();
+      const fileName = `${userId}_${itemId}_${timestamp}.jpg`;
+
+      // Read the image as blob
+      const response = await fetch(imageUri);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      console.log('Blob created, size:', blob.size);
+
+      if (blob.size === 0) {
+        throw new Error('Image file is empty');
+      }
+
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('pantry-item-images')
+        .upload(fileName, blob, {
+          contentType: 'image/jpeg',
+          upsert: true,
+          cacheControl: '3600'
+        });
+
+      if (error) {
+        console.error('Supabase upload error:', error);
+        throw new Error(`Upload failed: ${error.message}`);
+      }
+
+      console.log('Upload successful:', data);
+
+      // Get public URL
+      const { data: publicUrlData } = supabase.storage
+        .from('pantry-item-images')
+        .getPublicUrl(fileName);
+
+      if (!publicUrlData?.publicUrl) {
+        throw new Error('Failed to generate public URL');
+      }
+
+      console.log('Public URL generated:', publicUrlData.publicUrl);
+      return publicUrlData.publicUrl;
+
+    } catch (error) {
+      console.error('uploadFoodItemImage error:', error);
+      throw error;
+    }
+  };
+
+  const deleteOldFoodImage = async (imageUrl) => {
+    if (!imageUrl || imageUrl.startsWith('file://')) return;
+
+    try {
+      // Extract filename from URL
+      const urlParts = imageUrl.split('/');
+      const fileName = urlParts[urlParts.length - 1].split('?')[0];
+     
+      if (fileName) {
+        const { error } = await supabase.storage
+          .from('pantry-item-images')
+          .remove([fileName]);
+
+        if (error) {
+          console.error('Error deleting old image:', error);
+        } else {
+          console.log('Old image deleted successfully:', fileName);
+        }
+      }
     } catch (error) {
       console.log('Error in deleteOldFoodImage:', error);
     }
   };
-  
-  const uploadFoodItemImage = async (imageUri, userId, itemId) => {
-    const fileName = `${userId}_${itemId}_${Date.now()}.jpg`;
-
-    // Convert local image URI to blob
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
-
-    const { data, error } = await supabase.storage
-      .from('pantry-item-images')
-      .upload(fileName, blob, {
-        contentType: 'image/jpeg',
-        upsert: true,
-      });
-
-    if (error) {
-      throw error;
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from('pantry-item-images')
-      .getPublicUrl(fileName);
-
-    return publicUrlData.publicUrl;
-  };
 
   const checkNetworkConnection = async () => {
-    return true; 
+    return true;
   };
 
   const handleImagePicker = () => {
@@ -288,11 +334,11 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           options: options.map(option => option.text),
-          destructiveButtonIndex: editedItem.image_url ? 2 : -1, 
-          cancelButtonIndex: options.length - 1, 
+          destructiveButtonIndex: editedItem.image_url ? 2 : -1,
+          cancelButtonIndex: options.length - 1,
         },
         (buttonIndex) => {
-          if (buttonIndex < options.length - 1) { 
+          if (buttonIndex < options.length - 1) {
             options[buttonIndex].onPress();
           }
         }
@@ -320,7 +366,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
           text: 'Remove',
           style: 'destructive',
           onPress: () => {
-            updateEditedItem('image_url', ''); 
+            updateEditedItem('image_url', '');
             setSelectedImageUri(null);
           }
         }
@@ -366,9 +412,10 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     }
   };
 
+  // FIXED: Improved image selection handler
   const handleImageSelection = async (imageAsset) => {
     console.log('Starting image selection...', imageAsset);
-    
+   
     if (!imageAsset.uri) {
       Alert.alert('Error', 'No image selected');
       return;
@@ -380,19 +427,19 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     }
 
     setIsUploadingImage(true);
-    setSelectedImageUri(imageAsset.uri); // Set the selected image immediately
-    
+   
     try {
-      // Update the edited item with the local URI first for immediate display
-      updateEditedItem('image_url', imageAsset.uri);
-
+      // Set the selected image immediately for preview
+      setSelectedImageUri(imageAsset.uri);
+      updateEditedItem('image_url', imageAsset.uri); // Show preview immediately
+     
       console.log('Uploading image...');
       const publicUrl = await uploadFoodItemImage(imageAsset.uri, userId, currentItem.id);
       console.log('Image uploaded successfully:', publicUrl);
-      
-      // Delete old image if it exists
-      if (currentItem.image_url && 
-          currentItem.image_url !== publicUrl && 
+     
+      // Delete old image if it exists and is different
+      if (currentItem.image_url &&
+          currentItem.image_url !== publicUrl &&
           !currentItem.image_url.startsWith('file://')) {
         console.log('Deleting old image...');
         await deleteOldFoodImage(currentItem.image_url);
@@ -401,22 +448,22 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       // Update with the public URL
       updateEditedItem('image_url', publicUrl);
       setSelectedImageUri(null); // Clear selected URI since we now have public URL
-      
+     
       Alert.alert('Success', 'Image uploaded successfully!');
-      
+     
     } catch (error) {
       console.error('Error uploading image:', error);
       // Revert to original image on error
       updateEditedItem('image_url', currentItem.image_url || '');
       setSelectedImageUri(null);
-      
+     
       let errorMessage = 'Failed to upload image. Please try again.';
       if (error.message.includes('network')) {
         errorMessage = 'Network error. Please check your connection and try again.';
       } else if (error.message.includes('size')) {
         errorMessage = 'Image file is too large. Please choose a smaller image.';
       }
-      
+     
       Alert.alert('Error', errorMessage);
     } finally {
       setIsUploadingImage(false);
@@ -429,8 +476,8 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       `Are you sure you want to delete ${item.item_name} from your pantry?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
+        {
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             if (!item.id || !userId) {
@@ -443,16 +490,22 @@ const FoodDetailsScreen = ({ route, navigation }) => {
                 await deleteOldFoodImage(item.image_url);
               }
 
-              console.log(`Mock: Deleting item ${item.id} for user ${userId}`);
-              
+              const { error } = await supabase
+                .from('pantry_items')
+                .delete()
+                .eq('id', item.id)
+                .eq('user_id', userId);
+
+              if (error) throw error;
+             
               if (onItemDeleted) {
                 onItemDeleted(item.id);
               }
-              
+             
               Alert.alert(
                 'Item Deleted',
                 `${item.item_name} has been removed from your pantry.`,
-                [{ text: 'OK', onPress: () => navigation.goBack() }] 
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
               );
             } catch (error) {
               console.error('Error deleting item:', error);
@@ -476,7 +529,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
   const handleDiscard = (item) => {
     if (!item.id || !userId) {
       Alert.alert(
-        'Error', 
+        'Error',
         'Unable to discard item. Please try again.',
         [{ text: 'OK' }]
       );
@@ -486,12 +539,12 @@ const FoodDetailsScreen = ({ route, navigation }) => {
   };
 
   const handleDiscardComplete = () => {
-    console.log('Mock: Discard complete, navigating back.');
-    
+    console.log('Discard complete, navigating back.');
+   
     if (onItemDiscarded) {
       onItemDiscarded(currentItem.id);
     }
-    
+   
     navigation.goBack();
   };
 
@@ -502,6 +555,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     }));
   }, []);
 
+  // FIXED: Improved save function
   const handleSaveEdit = async () => {
     const isConnected = await checkNetworkConnection();
     if (!isConnected) {
@@ -542,17 +596,42 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     setIsSaving(true);
 
     try {
+      // FIXED: Properly handle image_url - use the current value from editedItem
+      let finalImageUrl = editedItem.image_url;
+     
+      // If there's a selected image URI that hasn't been uploaded yet, upload it now
+      if (selectedImageUri && selectedImageUri !== editedItem.image_url) {
+        try {
+          console.log('Uploading final image...');
+          finalImageUrl = await uploadFoodItemImage(selectedImageUri, userId, currentItem.id);
+          console.log('Final image uploaded:', finalImageUrl);
+         
+          // Delete old image if different
+          if (currentItem.image_url &&
+              currentItem.image_url !== finalImageUrl &&
+              !currentItem.image_url.startsWith('file://')) {
+            await deleteOldFoodImage(currentItem.image_url);
+          }
+        } catch (uploadError) {
+          console.error('Error uploading final image:', uploadError);
+          // Continue with save but use original image URL
+          finalImageUrl = currentItem.image_url || '';
+          Alert.alert('Warning', 'Image upload failed, but item will be saved with previous image.');
+        }
+      }
+
       const updatedItem = {
         item_name: editedItem.item_name.trim(),
         quantity: parsedQuantity,
         quantity_unit: editedItem.unit.trim(),
         expiration_date: editedItem.expiration_date.trim() || null,
         description: editedItem.description.trim(),
-        image_url: editedItem.image_url.trim() || null,
+        image_url: finalImageUrl, // FIXED: Use the properly handled image URL
         updated_at: new Date().toISOString()
       };
 
-      // Real Supabase Update
+      console.log('Updating item with data:', updatedItem);
+
       const { error } = await supabase
         .from('pantry_items')
         .update(updatedItem)
@@ -575,6 +654,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       }
 
       setIsEditModalVisible(false);
+      setSelectedImageUri(null); // Clear selected image URI
 
       setTimeout(() => {
         Alert.alert('Success', 'Item updated successfully!');
@@ -604,12 +684,12 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     try {
       const date = new Date(dateString);
       if (isNaN(date.getTime())) {
-        return dateString; 
+        return dateString;
       }
       return date.toLocaleDateString();
     } catch (e) {
       console.error("Error formatting date:", e);
-      return dateString; 
+      return dateString;
     }
   };
 
@@ -620,9 +700,9 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       animationType="fade"
       onRequestClose={() => setIsUnitDropdownVisible(false)}
     >
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.dropdownOverlay}
-        onPress={() => setIsUnitDropdownVisible(false)} 
+        onPress={() => setIsUnitDropdownVisible(false)}
       >
         <View style={styles.dropdownContainer}>
           <ScrollView style={styles.dropdownScrollView}>
@@ -660,18 +740,18 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       onRequestClose={() => setIsEditModalVisible(false)}
     >
       <SafeAreaView style={styles.modalContainer}>
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardAvoidingView}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20} 
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setIsEditModalVisible(false)} disabled={isSaving}>
               <Text style={[styles.modalCancelButton, isSaving && { opacity: 0.5 }]}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.modalTitle}>Edit Item</Text>
-            <TouchableOpacity 
-              onPress={handleSaveEdit} 
+            <TouchableOpacity
+              onPress={handleSaveEdit}
               disabled={isSaving || isUploadingImage}
               style={[
                 styles.modalSaveButtonContainer,
@@ -687,21 +767,21 @@ const FoodDetailsScreen = ({ route, navigation }) => {
             </TouchableOpacity>
           </View>
 
-          <ScrollView 
-            ref={scrollViewRef} 
-            contentContainerStyle={styles.modalContent} 
-            keyboardShouldPersistTaps="handled" 
+          <ScrollView
+            ref={scrollViewRef}
+            contentContainerStyle={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.imageEditSection}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.imageEditContainer}
                 onPress={handleImagePicker}
-                disabled={isUploadingImage} 
+                disabled={isUploadingImage}
               >
                 <ImageWithFallback
                   imageUrl={selectedImageUri || editedItem.image_url}
-                  localImage={localImage} 
+                  localImage={localImage}
                   itemName={editedItem.item_name}
                   style={styles.editImage}
                   onImageError={() => {
@@ -710,7 +790,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
                   }}
                   resizeMode="cover"
                 />
-                
+               
                 {!isUploadingImage && (
                   <View style={styles.imageEditOverlay}>
                     <Text style={styles.editImageIcon}>📷</Text>
@@ -719,7 +799,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
                     </Text>
                   </View>
                 )}
-                
+               
                 {isUploadingImage && (
                   <View style={styles.uploadingOverlay}>
                     <ActivityIndicator size="large" color="#fff" />
@@ -746,7 +826,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
               <View style={[styles.inputGroup, styles.inputGroupHalf]}>
                 <Text style={styles.inputLabel}>Quantity</Text>
                 <TextInput
-                  ref={quantityInputRef} 
+                  ref={quantityInputRef}
                   style={styles.textInput}
                   value={editedItem.quantity}
                   onChangeText={(text) => {
@@ -778,7 +858,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Expiration Date</Text>
               <TextInput
-                ref={expirationInputRef} 
+                ref={expirationInputRef}
                 style={styles.textInput}
                 value={editedItem.expiration_date}
                 onChangeText={(text) => updateEditedItem('expiration_date', text)}
@@ -793,7 +873,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Description</Text>
               <TextInput
-                ref={descriptionInputRef} 
+                ref={descriptionInputRef}
                 style={[styles.textInput, styles.textInputMultiline]}
                 value={editedItem.description}
                 onChangeText={(text) => updateEditedItem('description', text)}
@@ -804,7 +884,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
                 onFocus={() => {
                   setTimeout(() => {
                     scrollViewRef.current?.scrollToEnd({ animated: true });
-                  }, 100); 
+                  }, 100);
                 }}
               />
             </View>
@@ -833,14 +913,14 @@ const FoodDetailsScreen = ({ route, navigation }) => {
         <SafeAreaView style={styles.safeArea}>
           <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.backButton}
                 onPress={() => navigation.goBack()}
               >
                 <Text style={styles.backButtonText}>← Back</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+             
+              <TouchableOpacity
                 style={styles.editButton}
                 onPress={() => setIsEditModalVisible(true)}
               >
@@ -897,7 +977,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
                     {formatDate(currentItem.expiration_date)}
                     {expirationStatus.daysLeft !== undefined && (
                       <Text style={styles.daysLeft}>
-                        {isExpired 
+                        {isExpired
                           ? ` (${Math.abs(expirationStatus.daysLeft)} days ago)`
                           : ` (${expirationStatus.daysLeft} days left)`
                         }
@@ -916,21 +996,21 @@ const FoodDetailsScreen = ({ route, navigation }) => {
             </View>
 
             <View style={styles.actionsSection}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.actionButton, styles.shareButton]}
                 onPress={() => handleShare(currentItem)}
               >
                 <Text style={styles.shareButtonText}>Share</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.actionButton, styles.discardButton]}
                 onPress={() => handleDiscard(currentItem)}
               >
                 <Text style={styles.discardButtonText}>Discard</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.actionButton, styles.deleteButton]}
                 onPress={() => handleDelete(currentItem)}
               >
@@ -944,9 +1024,9 @@ const FoodDetailsScreen = ({ route, navigation }) => {
           <DiscardItemModal
             visible={isDiscardModalVisible}
             onClose={() => setIsDiscardModalVisible(false)}
-            onDiscard={handleDiscardComplete}
-            foodItem={currentItem}
+            itemId={currentItem.id}
             userId={userId}
+            onDiscardComplete={handleDiscardComplete}
           />
         </SafeAreaView>
       </View>

@@ -75,17 +75,16 @@ export default function PantryScreen({ navigation }) {
     }, [])
   );
 
- useEffect(() => {
-  if (searchQuery.trim() === '') {
-    setFilteredItems(pantryItems);
-  } else {
-    const filtered = pantryItems.filter(item =>
-      item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredItems(filtered);
-  }
-}, [searchQuery, pantryItems]);  // Ensure both dependencies are included
-
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredItems(pantryItems);
+    } else {
+      const filtered = pantryItems.filter(item =>
+        item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredItems(filtered);
+    }
+  }, [searchQuery, pantryItems]);  // Ensure both dependencies are included
 
   const initializeScreen = async () => {
     try {
@@ -180,18 +179,17 @@ export default function PantryScreen({ navigation }) {
   };
 
   const updateLocalItems = (newItems) => {
-  setPantryItems(newItems);
+    setPantryItems(newItems);
 
-  if (searchQuery.trim() === '') {
-    setFilteredItems(newItems);
-  } else {
-    const filtered = newItems.filter(item =>
-      item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredItems(filtered);
-  }
-};
-
+    if (searchQuery.trim() === '') {
+      setFilteredItems(newItems);
+    } else {
+      const filtered = newItems.filter(item =>
+        item.item_name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setFilteredItems(filtered);
+    }
+  };
 
   const getExpirationStatus = (dateString) => {
     try {
@@ -245,11 +243,27 @@ export default function PantryScreen({ navigation }) {
     return '🥫';
   };
 
+  // Additional debugging function
+  const debugImageUrl = (item) => {
+    console.log('=== DEBUG IMAGE URL ===');
+    console.log('Item:', item.item_name);
+    console.log('Raw image_url:', item.image_url);
+    console.log('Type:', typeof item.image_url);
+    console.log('Length:', item.image_url?.length);
+    console.log('Starts with http:', item.image_url?.startsWith('http'));
+    console.log('========================');
+  };
+
   const getFoodData = (item) => {
-    const itemName = item.item_name.toLowerCase();
-    
+    const itemName = item.item_name?.toLowerCase() || '';
+   
+    // Debug the image URL
+    if (item.image_url) {
+      debugImageUrl(item);
+    }
+   
     // For items that don't have preparation time or calories
-    if (itemName.includes('water') || itemName.includes('salt') || 
+    if (itemName.includes('water') || itemName.includes('salt') ||
         itemName.includes('spice') || itemName.includes('oil')) {
       return {
         prep_time: '',
@@ -266,18 +280,22 @@ export default function PantryScreen({ navigation }) {
       calories: '',
       rating: (Math.random() * 0.5 + 4.5).toFixed(1), // Rating between 4.5-5.0
       distance: (Math.random() * 5).toFixed(1) + ' km',
-      description: `Fresh ${item.item_name.toLowerCase()} ready for preparation.`
+      description: `Fresh ${item.item_name?.toLowerCase() || 'item'} ready for preparation.`
     };
 
     // Set preparation time and calories based on item type
-    if (itemName.includes('apple') || itemName.includes('banana') || 
+    if (itemName.includes('apple') || itemName.includes('banana') ||
         itemName.includes('orange') || itemName.includes('grape')) {
       foodData.prep_time = '0 min';
       foodData.calories = '80-100 kcal';
-    } 
+    }
     else if (itemName.includes('chicken') || itemName.includes('meat')) {
       foodData.prep_time = '30-45 min';
       foodData.calories = '200-300 kcal';
+    }
+    else if (itemName.includes('turkey')) {
+      foodData.prep_time = '45-60 min';
+      foodData.calories = '250-350 kcal';
     }
     else if (itemName.includes('rice')) {
       foodData.prep_time = '15-20 min';
@@ -316,89 +334,110 @@ export default function PantryScreen({ navigation }) {
   };
 
   const renderGridItem = ({ item, index }) => {
-  const expirationStatus = getExpirationStatus(item.expiration_date);
-  const isExpired = expirationStatus.status === 'expired';
-  const isExpiring = expirationStatus.status === 'expiring';
+    const expirationStatus = getExpirationStatus(item.expiration_date);
+    const isExpired = expirationStatus.status === 'expired';
+    const isExpiring = expirationStatus.status === 'expiring';
 
-  const itemKey = Object.keys(image_url).find(key =>
-    key.toLowerCase() === item.item_name.toLowerCase()
-  );
-  const hasDefaultImage = itemKey && image_url[itemKey];
-  const foodData = getFoodData(item);
+    const itemKey = Object.keys(image_url).find(key =>
+      key.toLowerCase() === item.item_name.toLowerCase()
+    );
+    const hasDefaultImage = itemKey && image_url[itemKey];
+    const foodData = getFoodData(item);
 
-  // Debug log to check image URLs
-  console.log('Item:', item.item_name, 'Image URL:', item.image_url, 'Has Default:', hasDefaultImage);
+    // Improved image URL validation
+    const hasValidImageUrl = item.image_url &&
+      typeof item.image_url === 'string' &&
+      item.image_url.trim() !== '' &&
+      item.image_url !== 'NULL' &&
+      item.image_url !== 'null' &&
+      !item.image_url.includes('undefined') &&
+      (item.image_url.startsWith('http://') || item.image_url.startsWith('https://'));
 
-  return (
-    <TouchableOpacity
-      style={[
-        styles.gridItem,
-        isExpired && styles.gridItemExpired,
-        isExpiring && styles.gridItemExpiring
-      ]}
-      onPress={() => navigateToFoodDetails({ ...item, ...foodData })}
-      activeOpacity={0.7}
-    >
-      <View style={styles.gridItemContent}>
-        <View style={styles.foodImageContainer}>
-          {/* Check if we have a valid image_url and it's not null/empty */}
-          {item.image_url && item.image_url.trim() !== '' && item.image_url !== 'NULL' ? (
-  <Image
-    source={{ uri: item.image_url }}  // <-- Should be the public URL
-    style={styles.foodImage}
-    resizeMode="cover"
-    onError={(error) => {
-      console.log('Image load error for', item.item_name, ':', error.nativeEvent.error);
-    }}
-  />
+    console.log('PantryScreen - Item:', item.item_name, {
+      hasValidImageUrl,
+      imageUrl: item.image_url,
+      hasDefaultImage,
+      itemKey
+    });
 
-          ) : hasDefaultImage ? (
-            <Image
-              source={image_url[itemKey]}
-              style={styles.foodImage}
-              resizeMode="cover"
-              onError={(error) => {
-                console.log('Default image load error for', item.item_name, ':', error);
-              }}
-            />
-          ) : (
-            <View style={styles.iconContainer}>
-              <Text style={styles.foodIcon}>{getItemEmoji(item.item_name)}</Text>
+    return (
+      <TouchableOpacity
+        style={[
+          styles.gridItem,
+          isExpired && styles.gridItemExpired,
+          isExpiring && styles.gridItemExpiring
+        ]}
+        onPress={() => navigateToFoodDetails({ ...item, ...foodData })}
+        activeOpacity={0.7}
+      >
+        <View style={styles.gridItemContent}>
+          <View style={styles.foodImageContainer}>
+            {hasValidImageUrl ? (
+              <Image
+                source={{ uri: item.image_url }}
+                style={styles.foodImage}
+                resizeMode="cover"
+                onError={(error) => {
+                  console.log('Remote image load error for', item.item_name, ':', error.nativeEvent?.error);
+                }}
+                onLoad={() => {
+                  console.log('Remote image loaded successfully for', item.item_name);
+                }}
+                onLoadStart={() => {
+                  console.log('Started loading remote image for', item.item_name);
+                }}
+                // Remove cache to ensure fresh loads during development
+                cache="reload"
+                key={`remote-${item.id}-${item.image_url}`}
+              />
+            ) : hasDefaultImage ? (
+              <Image
+                source={image_url[itemKey]}
+                style={styles.foodImage}
+                resizeMode="cover"
+                onError={(error) => {
+                  console.log('Default image load error for', item.item_name, ':', error);
+                }}
+                key={`default-${item.id}-${itemKey}`}
+              />
+            ) : (
+              <View style={styles.iconContainer} key={`emoji-${item.id}`}>
+                <Text style={styles.foodIcon}>{getItemEmoji(item.item_name)}</Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.itemName} numberOfLines={1}>
+            {item.item_name}
+          </Text>
+
+          <View style={styles.foodDetails}>
+            {foodData.prep_time ? (
+              <Text style={styles.detailText}>{foodData.prep_time}</Text>
+            ) : <View style={{flex: 1}} />}
+            {foodData.calories ? (
+              <Text style={styles.detailText}>{foodData.calories}</Text>
+            ) : <View style={{flex: 1}} />}
+          </View>
+
+          <View style={styles.ratingContainer}>
+            <Text style={styles.ratingText}>⭐ {foodData.rating}</Text>
+          </View>
+
+          {isExpired && (
+            <View style={[styles.statusBadge, styles.expiredBadge]}>
+              <Text style={styles.statusText}>EXPIRED</Text>
+            </View>
+          )}
+          {isExpiring && !isExpired && (
+            <View style={[styles.statusBadge, styles.expiringBadge]}>
+              <Text style={styles.statusText}>EXPIRING</Text>
             </View>
           )}
         </View>
-
-        <Text style={styles.itemName} numberOfLines={1}>
-          {item.item_name}
-        </Text>
-
-        <View style={styles.foodDetails}>
-          {foodData.prep_time ? (
-            <Text style={styles.detailText}>{foodData.prep_time}</Text>
-          ) : <View style={{flex: 1}} />}
-          {foodData.calories ? (
-            <Text style={styles.detailText}>{foodData.calories}</Text>
-          ) : <View style={{flex: 1}} />}
-        </View>
-
-        <View style={styles.ratingContainer}>
-          <Text style={styles.ratingText}>⭐ {foodData.rating}</Text>
-        </View>
-
-        {isExpired && (
-          <View style={[styles.statusBadge, styles.expiredBadge]}>
-            <Text style={styles.statusText}>EXPIRED</Text>
-          </View>
-        )}
-        {isExpiring && !isExpired && (
-          <View style={[styles.statusBadge, styles.expiringBadge]}>
-            <Text style={styles.statusText}>EXPIRING</Text>
-          </View>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-};
+      </TouchableOpacity>
+    );
+  };
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
@@ -524,8 +563,8 @@ export default function PantryScreen({ navigation }) {
           />
         }
         ListEmptyComponent={
-          filteredItems.length === 0 && searchQuery.trim() === '' 
-            ? renderEmptyState() 
+          filteredItems.length === 0 && searchQuery.trim() === ''
+            ? renderEmptyState()
             : null
         }
       />
