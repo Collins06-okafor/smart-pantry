@@ -28,8 +28,10 @@ const image_url = {
   'bread': require('../assets/images/bread.png'),
   'milk': require('../assets/images/milk.png'),
   'eggs': require('../assets/images/eggs.png'),
+  'egg': require('../assets/images/eggs.png'), // Add singular version
   'cheese': require('../assets/images/cheese.png'),
   'tomato': require('../assets/images/tomato.png'),
+  'tomatoes': require('../assets/images/tomato.png'), // Add plural version
   'potato': require('../assets/images/potato.png'),
   'carrot': require('../assets/images/carrot.png'),
   'chicken': require('../assets/images/chicken.png'),
@@ -37,6 +39,9 @@ const image_url = {
   'rice': require('../assets/images/rice.png'),
   'pasta': require('../assets/images/pasta.png'),
   'avocado': require('../assets/images/avocado.png'),
+  //'beef': require('../assets/images/beef.png'), // Add if you have this image
+  //'turkey': require('../assets/images/turkey.png'), // Add if you have this image
+  // Add more mappings based on your database items
 };
 
 export default function PantryScreen({ navigation }) {
@@ -148,20 +153,29 @@ export default function PantryScreen({ navigation }) {
     navigation.navigate('FoodDetails', {
       foodItem: item,
       expirationStatus: getExpirationStatus(item.expiration_date),
-    onItemUpdated: (updatedItem) => {
-  const updatedItems = pantryItems.map(prevItem =>
-    prevItem.id === updatedItem.id ? updatedItem : prevItem
-  );
-  updateLocalItems(updatedItems);
-
-  
-  setFilteredItems(prevItems =>
-    prevItems.map(prevItem => 
-      prevItem.id === updatedItem.id ? updatedItem : prevItem
-    )
-  );
-}
-
+      // Pass a callback function to update the item in PantryScreen's state
+      onItemUpdated: (updatedItem) => {
+        // Update pantryItems
+        setPantryItems(prevItems =>
+          prevItems.map(prevItem =>
+            prevItem.id === updatedItem.id ? updatedItem : prevItem
+          )
+        );
+        // Update filteredItems to reflect the change immediately
+        setFilteredItems(prevItems =>
+          prevItems.map(prevItem =>
+            prevItem.id === updatedItem.id ? updatedItem : prevItem
+          )
+        );
+      },
+      onItemDeleted: (deletedItemId) => {
+        setPantryItems(prevItems => prevItems.filter(item => item.id !== deletedItemId));
+        setFilteredItems(prevItems => prevItems.filter(item => item.id !== deletedItemId));
+      },
+      onItemDiscarded: (discardedItemId) => {
+        setPantryItems(prevItems => prevItems.filter(item => item.id !== discardedItemId));
+        setFilteredItems(prevItems => prevItems.filter(item => item.id !== discardedItemId));
+      }
     });
   };
 
@@ -302,79 +316,89 @@ export default function PantryScreen({ navigation }) {
   };
 
   const renderGridItem = ({ item, index }) => {
-    const expirationStatus = getExpirationStatus(item.expiration_date);
-    const isExpired = expirationStatus.status === 'expired';
-    const isExpiring = expirationStatus.status === 'expiring';
+  const expirationStatus = getExpirationStatus(item.expiration_date);
+  const isExpired = expirationStatus.status === 'expired';
+  const isExpiring = expirationStatus.status === 'expiring';
 
-    const itemKey = Object.keys(image_url).find(key =>
-      key.toLowerCase() === item.item_name.toLowerCase()
-    );
-    const hasDefaultImage = itemKey && image_url[itemKey];
+  const itemKey = Object.keys(image_url).find(key =>
+    key.toLowerCase() === item.item_name.toLowerCase()
+  );
+  const hasDefaultImage = itemKey && image_url[itemKey];
+  const foodData = getFoodData(item);
 
-    const foodData = getFoodData(item);
+  // Debug log to check image URLs
+  console.log('Item:', item.item_name, 'Image URL:', item.image_url, 'Has Default:', hasDefaultImage);
 
-    return (
-      <TouchableOpacity
-        style={[
-          styles.gridItem,
-          isExpired && styles.gridItemExpired,
-          isExpiring && styles.gridItemExpiring
-        ]}
-        onPress={() => navigateToFoodDetails({ ...item, ...foodData })}
-        activeOpacity={0.7}
-      >
-        <View style={styles.gridItemContent}>
-          <View style={styles.foodImageContainer}>
-            {item.image_url ? (
-              <Image
-                source={{ uri: item.image_url }}
-                style={styles.foodImage}
-                resizeMode="cover"
-              />
-            ) : hasDefaultImage ? (
-              <Image
-                source={image_url[itemKey]}
-                style={styles.foodImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.iconContainer}>
-                <Text style={styles.foodIcon}>{getItemEmoji(item.item_name)}</Text>
-              </View>
-            )}
-          </View>
+  return (
+    <TouchableOpacity
+      style={[
+        styles.gridItem,
+        isExpired && styles.gridItemExpired,
+        isExpiring && styles.gridItemExpiring
+      ]}
+      onPress={() => navigateToFoodDetails({ ...item, ...foodData })}
+      activeOpacity={0.7}
+    >
+      <View style={styles.gridItemContent}>
+        <View style={styles.foodImageContainer}>
+          {/* Check if we have a valid image_url and it's not null/empty */}
+          {item.image_url && item.image_url.trim() !== '' && item.image_url !== 'NULL' ? (
+  <Image
+    source={{ uri: item.image_url }}  // <-- Should be the public URL
+    style={styles.foodImage}
+    resizeMode="cover"
+    onError={(error) => {
+      console.log('Image load error for', item.item_name, ':', error.nativeEvent.error);
+    }}
+  />
 
-          <Text style={styles.itemName} numberOfLines={1}>
-            {item.item_name}
-          </Text>
-
-          <View style={styles.foodDetails}>
-            {foodData.prep_time ? (
-              <Text style={styles.detailText}>{foodData.prep_time}</Text>
-            ) : <View style={{flex: 1}} />}
-            {foodData.calories ? (
-              <Text style={styles.detailText}>{foodData.calories}</Text>
-            ) : <View style={{flex: 1}} />}
-          </View>
-
-          <View style={styles.ratingContainer}>
-            <Text style={styles.ratingText}>⭐ {foodData.rating}</Text>
-          </View>
-
-          {isExpired && (
-            <View style={[styles.statusBadge, styles.expiredBadge]}>
-              <Text style={styles.statusText}>EXPIRED</Text>
-            </View>
-          )}
-          {isExpiring && !isExpired && (
-            <View style={[styles.statusBadge, styles.expiringBadge]}>
-              <Text style={styles.statusText}>EXPIRING</Text>
+          ) : hasDefaultImage ? (
+            <Image
+              source={image_url[itemKey]}
+              style={styles.foodImage}
+              resizeMode="cover"
+              onError={(error) => {
+                console.log('Default image load error for', item.item_name, ':', error);
+              }}
+            />
+          ) : (
+            <View style={styles.iconContainer}>
+              <Text style={styles.foodIcon}>{getItemEmoji(item.item_name)}</Text>
             </View>
           )}
         </View>
-      </TouchableOpacity>
-    );
-  };
+
+        <Text style={styles.itemName} numberOfLines={1}>
+          {item.item_name}
+        </Text>
+
+        <View style={styles.foodDetails}>
+          {foodData.prep_time ? (
+            <Text style={styles.detailText}>{foodData.prep_time}</Text>
+          ) : <View style={{flex: 1}} />}
+          {foodData.calories ? (
+            <Text style={styles.detailText}>{foodData.calories}</Text>
+          ) : <View style={{flex: 1}} />}
+        </View>
+
+        <View style={styles.ratingContainer}>
+          <Text style={styles.ratingText}>⭐ {foodData.rating}</Text>
+        </View>
+
+        {isExpired && (
+          <View style={[styles.statusBadge, styles.expiredBadge]}>
+            <Text style={styles.statusText}>EXPIRED</Text>
+          </View>
+        )}
+        {isExpiring && !isExpired && (
+          <View style={[styles.statusBadge, styles.expiringBadge]}>
+            <Text style={styles.statusText}>EXPIRING</Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+};
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>

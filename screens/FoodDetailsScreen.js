@@ -13,13 +13,15 @@ import {
   Platform,
   KeyboardAvoidingView,
   Dimensions,
-  ActionSheetIOS
+  ActionSheetIOS,
+  ActivityIndicator
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import DiscardItemModal from './DiscardItemModal';
 import NetInfo from '@react-native-community/netinfo';
 import { uploadFoodImage } from '../utils/uploadFoodImage';
+import * as FileSystem from 'expo-file-system';
 
 const { width, height } = Dimensions.get('window');
 
@@ -82,39 +84,60 @@ const ImageWithFallback = ({
 }) => {
   const [currentImageUrl, setCurrentImageUrl] = useState(imageUrl);
   const [hasError, setHasError] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   
   useEffect(() => {
     setCurrentImageUrl(imageUrl);
     setHasError(false);
+    setIsLoading(!!imageUrl);
   }, [imageUrl]);
 
   const handleImageError = (error) => {
     console.log('Image error for:', currentImageUrl, error);
     setHasError(true);
+    setIsLoading(false);
     onImageError && onImageError(error);
   };
 
+  const handleImageLoad = () => {
+    setIsLoading(false);
+  };
+
+  // Show loading indicator while image is loading
+  if (isLoading) {
+    return (
+      <View style={[style, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
+  // Show remote image if available and no error
   if (currentImageUrl && !hasError) {
     return (
       <Image
         source={{ uri: currentImageUrl }}
         style={style}
         onError={handleImageError}
+        onLoad={handleImageLoad}
         {...props}
       />
     );
   }
 
+  // Show local image if available
   if (localImage) {
     return (
       <Image
         source={localImage}
         style={style}
+        onLoad={handleImageLoad}
         {...props}
       />
     );
   }
 
+  // Show emoji fallback
   return (
     <View style={[style, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
       <Text style={{ fontSize: style.width ? style.width * 0.4 : 80 }}>
@@ -139,7 +162,14 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     daysLeft: 30
   };
 
-const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItemUpdated } = route.params || {};
+  const { 
+    foodItem = mockFoodItem, 
+    expirationStatus = mockExpirationStatus, 
+    onItemUpdated,
+    onItemDeleted,
+    onItemDiscarded
+  } = route.params || {};
+
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isDiscardModalVisible, setIsDiscardModalVisible] = useState(false);
   const [isUnitDropdownVisible, setIsUnitDropdownVisible] = useState(false);
@@ -155,7 +185,7 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
   const [userId, setUserId] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [selectedImageUri, setSelectedImageUri] = useState(null); // Track the selected image URI
+  const [selectedImageUri, setSelectedImageUri] = useState(null);
   
   const quantityInputRef = useRef(null);
   const expirationInputRef = useRef(null);
@@ -186,13 +216,26 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
         description: currentItem.description || '',
         image_url: currentItem.image_url || ''
       });
-      setSelectedImageUri(null); // Reset selected image when modal opens
+      setSelectedImageUri(null);
     }
   }, [isEditModalVisible, currentItem]);
 
   const isExpired = expirationStatus.status === 'expired';
   const isExpiring = expirationStatus.status === 'expiring';
-  const localImage = foodImages[currentItem.item_name.toLowerCase()];
+  
+  // Fix: Safely get local image with error handling
+  const getLocalImage = (itemName) => {
+    if (!itemName) return null;
+    try {
+      const key = itemName.toLowerCase();
+      return foodImages[key] || null;
+    } catch (error) {
+      console.log('Error getting local image:', error);
+      return null;
+    }
+  };
+  
+  const localImage = getLocalImage(currentItem.item_name);
 
   const deleteOldFoodImage = async (imageUrl) => {
     if (!imageUrl || imageUrl.startsWith('file://')) return; 
@@ -204,15 +247,29 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
     }
   };
   
-  // Modified mock upload function to return the same URI for testing
-  const uploadFoodItemImage = async (imageUri) => {
-    console.log('Mock: Uploading image:', imageUri);
-    // Simulate upload delay but return the same URI
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve(imageUri); // Return the same URI instead of random one
-      }, 1500);
-    });
+  const uploadFoodItemImage = async (imageUri, userId, itemId) => {
+    const fileName = `${userId}_${itemId}_${Date.now()}.jpg`;
+
+    // Convert local image URI to blob
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+
+    const { data, error } = await supabase.storage
+      .from('pantry-item-images')
+      .upload(fileName, blob, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('pantry-item-images')
+      .getPublicUrl(fileName);
+
+    return publicUrlData.publicUrl;
   };
 
   const checkNetworkConnection = async () => {
@@ -274,7 +331,7 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
   const openCamera = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
+      Alert.alert('Permission Denied', 'Sorry, we need camera permissions to make this work!');
       return;
     }
 
@@ -287,18 +344,13 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       handleImageSelection(result.assets[0]);
-    } else if (result.canceled) {
-      console.log('Camera cancelled');
-    } else {
-      console.error('Camera error:', result);
-      Alert.alert('Camera Error', 'Failed to take photo.');
     }
   };
 
   const openImageLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Sorry, we need camera roll permissions to make this work!');
+      Alert.alert('Permission Denied', 'Sorry, we need photo library permissions to make this work!');
       return;
     }
 
@@ -311,11 +363,6 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
       handleImageSelection(result.assets[0]);
-    } else if (result.canceled) {
-      console.log('Image library cancelled');
-    } else {
-      console.error('Image library error:', result);
-      Alert.alert('Image Library Error', 'Failed to pick image from library.');
     }
   };
 
@@ -333,15 +380,17 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
     }
 
     setIsUploadingImage(true);
-    setSelectedImageUri(imageAsset.uri); // Store the selected image URI
+    setSelectedImageUri(imageAsset.uri); // Set the selected image immediately
     
     try {
+      // Update the edited item with the local URI first for immediate display
       updateEditedItem('image_url', imageAsset.uri);
 
       console.log('Uploading image...');
-      const publicUrl = await uploadFoodItemImage(imageAsset.uri);
+      const publicUrl = await uploadFoodItemImage(imageAsset.uri, userId, currentItem.id);
       console.log('Image uploaded successfully:', publicUrl);
       
+      // Delete old image if it exists
       if (currentItem.image_url && 
           currentItem.image_url !== publicUrl && 
           !currentItem.image_url.startsWith('file://')) {
@@ -349,13 +398,17 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
         await deleteOldFoodImage(currentItem.image_url);
       }
 
+      // Update with the public URL
       updateEditedItem('image_url', publicUrl);
+      setSelectedImageUri(null); // Clear selected URI since we now have public URL
       
       Alert.alert('Success', 'Image uploaded successfully!');
       
     } catch (error) {
       console.error('Error uploading image:', error);
+      // Revert to original image on error
       updateEditedItem('image_url', currentItem.image_url || '');
+      setSelectedImageUri(null);
       
       let errorMessage = 'Failed to upload image. Please try again.';
       if (error.message.includes('network')) {
@@ -391,6 +444,11 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
               }
 
               console.log(`Mock: Deleting item ${item.id} for user ${userId}`);
+              
+              if (onItemDeleted) {
+                onItemDeleted(item.id);
+              }
+              
               Alert.alert(
                 'Item Deleted',
                 `${item.item_name} has been removed from your pantry.`,
@@ -429,6 +487,11 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
 
   const handleDiscardComplete = () => {
     console.log('Mock: Discard complete, navigating back.');
+    
+    if (onItemDiscarded) {
+      onItemDiscarded(currentItem.id);
+    }
+    
     navigation.goBack();
   };
 
@@ -445,7 +508,7 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
       Alert.alert('No Connection', 'Please check your internet connection and try again.');
       return;
     }
-    
+
     if (!editedItem.item_name.trim()) {
       Alert.alert('Error', 'Item name cannot be empty');
       return;
@@ -463,7 +526,7 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
         Alert.alert('Error', 'Please enter date in YYYY-MM-DD format');
         return;
       }
-      
+
       const date = new Date(editedItem.expiration_date);
       if (isNaN(date.getTime())) {
         Alert.alert('Error', 'Please enter a valid date');
@@ -477,44 +540,51 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
     }
 
     setIsSaving(true);
-    
+
     try {
-    const updatedItem = {
-      item_name: editedItem.item_name.trim(),
-      quantity: parsedQuantity,
-      quantity_unit: editedItem.unit.trim(),
-      expiration_date: editedItem.expiration_date.trim() || null,
-      description: editedItem.description.trim(),
-      image_url: editedItem.image_url.trim() || null,
-      updated_at: new Date().toISOString() 
-    };
+      const updatedItem = {
+        item_name: editedItem.item_name.trim(),
+        quantity: parsedQuantity,
+        quantity_unit: editedItem.unit.trim(),
+        expiration_date: editedItem.expiration_date.trim() || null,
+        description: editedItem.description.trim(),
+        image_url: editedItem.image_url.trim() || null,
+        updated_at: new Date().toISOString()
+      };
 
-    console.log('Mock: Updating item with ID:', currentItem.id);
-    console.log('Mock: Update data:', updatedItem);
+      // Real Supabase Update
+      const { error } = await supabase
+        .from('pantry_items')
+        .update(updatedItem)
+        .eq('id', currentItem.id)
+        .eq('user_id', userId);
 
-    await new Promise(resolve => setTimeout(resolve, 1000));
+      if (error) {
+        throw error;
+      }
 
-    const newCurrentItem = {
-      ...currentItem,
-      ...updatedItem
-    };
-    setCurrentItem(newCurrentItem);
-      
+      const newCurrentItem = {
+        ...currentItem,
+        ...updatedItem
+      };
+
+      setCurrentItem(newCurrentItem);
+
       if (onItemUpdated) {
-      onItemUpdated(newCurrentItem);
-    }
-    
-    setIsEditModalVisible(false);
-    
-    setTimeout(() => {
-      Alert.alert('Success', 'Item updated successfully!');
-    }, 300);
+        onItemUpdated(newCurrentItem);
+      }
+
+      setIsEditModalVisible(false);
+
+      setTimeout(() => {
+        Alert.alert('Success', 'Item updated successfully!');
+      }, 300);
 
     } catch (error) {
       console.error('Error updating item:', error);
-      
+
       let errorMessage = 'Failed to update item. Please try again.';
-      
+
       if (error.message.includes('JWT')) {
         errorMessage = 'Authentication error. Please log in again.';
       } else if (error.message.includes('permission')) {
@@ -522,7 +592,7 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
       } else if (error.message.includes('network')) {
         errorMessage = 'Network error. Please check your connection.';
       }
-      
+
       Alert.alert('Error', errorMessage);
     } finally {
       setIsSaving(false);
@@ -630,7 +700,7 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
                 disabled={isUploadingImage} 
               >
                 <ImageWithFallback
-                  imageUrl={selectedImageUri || editedItem.image_url} // Use selectedImageUri if available
+                  imageUrl={selectedImageUri || editedItem.image_url}
                   localImage={localImage} 
                   itemName={editedItem.item_name}
                   style={styles.editImage}
@@ -652,6 +722,7 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
                 
                 {isUploadingImage && (
                   <View style={styles.uploadingOverlay}>
+                    <ActivityIndicator size="large" color="#fff" />
                     <Text style={styles.uploadingText}>Uploading...</Text>
                   </View>
                 )}
@@ -747,6 +818,15 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
     </Modal>
   );
 
+  if (isSaving) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={styles.loadingText}>Saving...</Text>
+      </View>
+    );
+  }
+
   return (
     <ErrorBoundary navigation={navigation}>
       <View style={styles.container}>
@@ -795,87 +875,86 @@ const { foodItem = mockFoodItem, expirationStatus = mockExpirationStatus, onItem
                     isExpired && styles.statusTextExpired,
                     isExpiring && styles.statusTextExpiring
                   ]}>
-                    {isExpired ? 'Expired' : isExpiring ? 'Expiring Soon' : 'Fresh'}
+                    {isExpired ? '⚠️ Expired' : isExpiring ? '⏰ Expiring Soon' : '✅ Fresh'}
                   </Text>
                 </View>
               </View>
 
-              <View style={styles.quantityRow}>
+              <View style={styles.quantitySection}>
                 <Text style={styles.quantityText}>
                   {currentItem.quantity} {currentItem.quantity_unit}
                 </Text>
               </View>
 
               {currentItem.expiration_date && (
-                <View style={styles.expirationRow}>
-                  <Text style={styles.expirationLabel}>Expires: </Text>
+                <View style={styles.expirationSection}>
+                  <Text style={styles.sectionLabel}>Expires:</Text>
                   <Text style={[
                     styles.expirationDate,
                     isExpired && styles.expirationDateExpired,
                     isExpiring && styles.expirationDateExpiring
                   ]}>
                     {formatDate(currentItem.expiration_date)}
+                    {expirationStatus.daysLeft !== undefined && (
+                      <Text style={styles.daysLeft}>
+                        {isExpired 
+                          ? ` (${Math.abs(expirationStatus.daysLeft)} days ago)`
+                          : ` (${expirationStatus.daysLeft} days left)`
+                        }
+                      </Text>
+                    )}
                   </Text>
-                  {expirationStatus.daysLeft !== null && (
-                    <Text style={styles.daysLeftText}>
-                      {isExpired 
-                        ? `(${Math.abs(expirationStatus.daysLeft)} days ago)`
-                        : `(${expirationStatus.daysLeft} days left)`
-                      }
-                    </Text>
-                  )}
                 </View>
               )}
 
               {currentItem.description && (
                 <View style={styles.descriptionSection}>
-                  <Text style={styles.descriptionLabel}>Description:</Text>
+                  <Text style={styles.sectionLabel}>Description:</Text>
                   <Text style={styles.descriptionText}>{currentItem.description}</Text>
                 </View>
               )}
             </View>
 
-            <View style={styles.actionSection}>
-              <TouchableOpacity
+            <View style={styles.actionsSection}>
+              <TouchableOpacity 
                 style={[styles.actionButton, styles.shareButton]}
                 onPress={() => handleShare(currentItem)}
               >
-                <Text style={styles.shareButtonText}>🔗 Share</Text>
+                <Text style={styles.shareButtonText}>Share</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
+              <TouchableOpacity 
                 style={[styles.actionButton, styles.discardButton]}
                 onPress={() => handleDiscard(currentItem)}
               >
-                <Text style={styles.discardButtonText}>🗑️ Discard</Text>
+                <Text style={styles.discardButtonText}>Discard</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
+              <TouchableOpacity 
                 style={[styles.actionButton, styles.deleteButton]}
                 onPress={() => handleDelete(currentItem)}
               >
-                <Text style={styles.deleteButtonText}>❌ Delete</Text>
+                <Text style={styles.deleteButtonText}>Delete</Text>
               </TouchableOpacity>
             </View>
-
-            <View style={{ height: 40 }} />
           </ScrollView>
+
+          <EditModal />
+
+          <DiscardItemModal
+            visible={isDiscardModalVisible}
+            onClose={() => setIsDiscardModalVisible(false)}
+            onDiscard={handleDiscardComplete}
+            foodItem={currentItem}
+            userId={userId}
+          />
         </SafeAreaView>
-
-        <EditModal />
-
-        <DiscardItemModal
-          visible={isDiscardModalVisible}
-          onClose={() => setIsDiscardModalVisible(false)}
-          onDiscardComplete={handleDiscardComplete}
-          itemToDiscard={currentItem}
-          userId={userId}
-        />
       </View>
     </ErrorBoundary>
   );
 };
 
+// Error Boundary Component
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -893,15 +972,20 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Something went wrong</Text>
-          <TouchableOpacity
-            style={styles.errorButton}
-            onPress={() => this.props.navigation.goBack()}
-          >
-            <Text style={styles.errorButtonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
+        <SafeAreaView style={styles.errorContainer}>
+          <View style={styles.errorContent}>
+            <Text style={styles.errorTitle}>Something went wrong</Text>
+            <Text style={styles.errorMessage}>
+              Unable to load food item details. Please try again.
+            </Text>
+            <TouchableOpacity
+              style={styles.errorButton}
+              onPress={() => this.props.navigation.goBack()}
+            >
+              <Text style={styles.errorButtonText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
       );
     }
 
@@ -920,19 +1004,29 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#fff',
+    paddingVertical: 12,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+    borderBottomColor: '#e0e0e0',
   },
   backButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    padding: 8,
   },
   backButtonText: {
     fontSize: 16,
@@ -941,158 +1035,162 @@ const styles = StyleSheet.create({
   },
   editButton: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     backgroundColor: '#007AFF',
     borderRadius: 8,
   },
   editButtonText: {
+    color: 'white',
     fontSize: 16,
-    color: '#fff',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   imageSection: {
-    backgroundColor: '#fff',
-    padding: 20,
+    backgroundColor: 'white',
+    paddingTop: 20,
     alignItems: 'center',
   },
   foodImage: {
-    width: width * 0.6,
-    height: width * 0.6,
-    borderRadius: 12,
+    width: width * 0.8,
+    height: width * 0.8,
+    borderRadius: 16,
     backgroundColor: '#f0f0f0',
   },
   detailsSection: {
-    backgroundColor: '#fff',
+    backgroundColor: 'white',
     padding: 20,
-    marginTop: 12,
-    borderRadius: 12,
+    marginTop: 16,
     marginHorizontal: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: 16,
   },
   itemTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
-    color: '#212529',
+    color: '#333',
     flex: 1,
+    marginRight: 12,
   },
   statusBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#d4edda',
-    marginLeft: 12,
+    borderRadius: 20,
+    backgroundColor: '#e8f5e8',
   },
   statusBadgeExpired: {
-    backgroundColor: '#f8d7da',
+    backgroundColor: '#ffeaea',
   },
   statusBadgeExpiring: {
     backgroundColor: '#fff3cd',
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#155724',
+    color: '#28a745',
   },
   statusTextExpired: {
-    color: '#721c24',
+    color: '#dc3545',
   },
   statusTextExpiring: {
-    color: '#856404',
+    color: '#ffc107',
   },
-  quantityRow: {
-    marginBottom: 12,
+  quantitySection: {
+    marginBottom: 16,
   },
   quantityText: {
-    fontSize: 18,
-    color: '#6c757d',
-    fontWeight: '500',
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#666',
   },
-  expirationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  expirationSection: {
     marginBottom: 16,
-    flexWrap: 'wrap',
   },
-  expirationLabel: {
+  sectionLabel: {
     fontSize: 16,
-    color: '#6c757d',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
   },
   expirationDate: {
-    fontSize: 16,
-    color: '#212529',
-    fontWeight: '600',
+    fontSize: 18,
+    color: '#666',
   },
   expirationDateExpired: {
     color: '#dc3545',
+    fontWeight: '600',
   },
   expirationDateExpiring: {
-    color: '#fd7e14',
+    color: '#ffc107',
+    fontWeight: '600',
   },
-  daysLeftText: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginLeft: 8,
+  daysLeft: {
+    fontSize: 16,
     fontStyle: 'italic',
   },
   descriptionSection: {
-    marginTop: 8,
-  },
-  descriptionLabel: {
-    fontSize: 16,
-    color: '#6c757d',
-    fontWeight: '500',
     marginBottom: 8,
   },
   descriptionText: {
     fontSize: 16,
-    color: '#212529',
-    lineHeight: 22,
+    color: '#666',
+    lineHeight: 24,
   },
-  actionSection: {
+  actionsSection: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    marginTop: 20,
+    justifyContent: 'space-around',
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    backgroundColor: 'white',
+    marginTop: 16,
+    marginHorizontal: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    marginBottom: 32,
   },
   actionButton: {
     flex: 1,
     paddingVertical: 12,
-    paddingHorizontal: 16,
     borderRadius: 8,
-    marginHorizontal: 4,
     alignItems: 'center',
+    marginHorizontal: 6,
   },
   shareButton: {
-    backgroundColor: '#17a2b8',
+    backgroundColor: '#007AFF',
   },
   shareButtonText: {
-    color: '#fff',
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
   discardButton: {
-    backgroundColor: '#ffc107',
+    backgroundColor: '#ff9500',
   },
   discardButtonText: {
-    color: '#212529',
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
   deleteButton: {
-    backgroundColor: '#dc3545',
+    backgroundColor: '#ff3b30',
   },
   deleteButtonText: {
-    color: '#fff',
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
-  
   // Modal Styles
   modalContainer: {
     flex: 1,
@@ -1106,37 +1204,36 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#fff',
+    paddingVertical: 16,
+    backgroundColor: 'white',
     borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+    borderBottomColor: '#e0e0e0',
   },
   modalCancelButton: {
     fontSize: 16,
     color: '#007AFF',
-    fontWeight: '500',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#212529',
+    color: '#333',
   },
   modalSaveButtonContainer: {
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 12,
     backgroundColor: '#007AFF',
-    borderRadius: 8,
+    borderRadius: 6,
   },
   modalSaveButton: {
     fontSize: 16,
-    color: '#fff',
-    fontWeight: '500',
+    fontWeight: '600',
+    color: 'white',
   },
   buttonDisabled: {
-    backgroundColor: '#6c757d',
+    backgroundColor: '#ccc',
   },
   buttonTextDisabled: {
-    color: '#adb5bd',
+    color: '#999',
   },
   modalContent: {
     padding: 20,
@@ -1147,14 +1244,12 @@ const styles = StyleSheet.create({
   },
   imageEditContainer: {
     position: 'relative',
-    width: width * 0.4,
-    height: width * 0.4,
-    borderRadius: 12,
-    overflow: 'hidden',
   },
   editImage: {
-    width: '100%',
-    height: '100%',
+    width: 200,
+    height: 200,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f0',
   },
   imageEditOverlay: {
     position: 'absolute',
@@ -1162,7 +1257,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1171,8 +1267,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   editImageText: {
-    color: '#fff',
-    fontSize: 14,
+    color: 'white',
+    fontSize: 16,
     fontWeight: '600',
   },
   uploadingOverlay: {
@@ -1181,14 +1277,16 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
   uploadingText: {
-    color: '#fff',
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
+    marginTop: 12,
   },
   inputGroup: {
     marginBottom: 20,
@@ -1198,28 +1296,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   inputGroupHalf: {
-    flex: 1,
-    marginRight: 8,
+    width: '48%',
   },
   inputLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#212529',
+    color: '#333',
     marginBottom: 8,
   },
   textInput: {
-    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#ced4da',
+    borderColor: '#ddd',
     borderRadius: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#212529',
+    backgroundColor: 'white',
+    color: '#333',
   },
   textInputMultiline: {
     height: 100,
     textAlignVertical: 'top',
+  },
+  inputHint: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
   },
   unitSelector: {
     flexDirection: 'row',
@@ -1228,18 +1330,12 @@ const styles = StyleSheet.create({
   },
   unitSelectorText: {
     fontSize: 16,
-    color: '#212529',
+    color: '#333',
   },
   unitSelectorArrow: {
     fontSize: 12,
-    color: '#6c757d',
+    color: '#999',
   },
-  inputHint: {
-    fontSize: 14,
-    color: '#6c757d',
-    marginTop: 4,
-  },
-  
   // Dropdown Styles
   dropdownOverlay: {
     flex: 1,
@@ -1248,55 +1344,68 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dropdownContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: 'white',
     borderRadius: 12,
     maxHeight: height * 0.5,
-    width: width * 0.6,
-    maxWidth: 200,
+    width: width * 0.7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   dropdownScrollView: {
     maxHeight: height * 0.4,
   },
   dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+    borderBottomColor: '#f0f0f0',
   },
   dropdownItemSelected: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#f0f8ff',
   },
   dropdownItemText: {
     fontSize: 16,
-    color: '#212529',
+    color: '#333',
   },
   dropdownItemTextSelected: {
-    color: '#fff',
+    color: '#007AFF',
     fontWeight: '600',
   },
-  
   // Error Boundary Styles
   errorContainer: {
     flex: 1,
+    backgroundColor: '#f8f9fa',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    padding: 20,
   },
-  errorText: {
-    fontSize: 18,
-    color: '#dc3545',
-    marginBottom: 20,
+  errorContent: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#666',
     textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
   },
   errorButton: {
     backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
   },
   errorButtonText: {
-    color: '#fff',
+    color: 'white',
     fontSize: 16,
     fontWeight: '600',
   },
