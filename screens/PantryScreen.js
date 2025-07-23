@@ -52,18 +52,6 @@ export default function PantryScreen({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [editForm, setEditForm] = useState({
-    id: null,
-    item_name: '',
-    quantity: '',
-    expiration_date: '',
-  });
-  const [shareModalVisible, setShareModalVisible] = useState(false);
-  const [selectedItemForShare, setSelectedItemForShare] = useState(null);
-  const [discardModalVisible, setDiscardModalVisible] = useState(false);
-  const [selectedItemForDiscard, setSelectedItemForDiscard] = useState(null);
-  const [discardStats, setDiscardStats] = useState([]);
 
   useEffect(() => {
     initializeScreen();
@@ -148,35 +136,31 @@ export default function PantryScreen({ navigation }) {
     fetchPantryItems();
   }, [searchQuery]);
 
-  const navigateToFoodDetails = (item) => {
-    navigation.navigate('FoodDetails', {
-      foodItem: item,
-      expirationStatus: getExpirationStatus(item.expiration_date),
-      // Pass a callback function to update the item in PantryScreen's state
-      onItemUpdated: (updatedItem) => {
-        // Update pantryItems
-        setPantryItems(prevItems =>
-          prevItems.map(prevItem =>
-            prevItem.id === updatedItem.id ? updatedItem : prevItem
-          )
-        );
-        // Update filteredItems to reflect the change immediately
-        setFilteredItems(prevItems =>
-          prevItems.map(prevItem =>
-            prevItem.id === updatedItem.id ? updatedItem : prevItem
-          )
-        );
-      },
-      onItemDeleted: (deletedItemId) => {
-        setPantryItems(prevItems => prevItems.filter(item => item.id !== deletedItemId));
-        setFilteredItems(prevItems => prevItems.filter(item => item.id !== deletedItemId));
-      },
-      onItemDiscarded: (discardedItemId) => {
-        setPantryItems(prevItems => prevItems.filter(item => item.id !== discardedItemId));
-        setFilteredItems(prevItems => prevItems.filter(item => item.id !== discardedItemId));
-      }
-    });
-  };
+ const navigateToPantryItemDetails = (item) => {
+  navigation.navigate('PantryItemDetails', {
+    item: item,
+    onItemUpdated: (updatedItem) => {
+      setPantryItems(prevItems =>
+        prevItems.map(prevItem =>
+          prevItem.id === updatedItem.id ? updatedItem : prevItem
+        )
+      );
+      setFilteredItems(prevItems =>
+        prevItems.map(prevItem =>
+          prevItem.id === updatedItem.id ? updatedItem : prevItem
+        )
+      );
+    },
+    onItemDeleted: (deletedItemId) => {
+      setPantryItems(prevItems => prevItems.filter(item => item.id !== deletedItemId));
+      setFilteredItems(prevItems => prevItems.filter(item => item.id !== deletedItemId));
+    },
+    onItemDiscarded: (discardedItemId) => {
+      setPantryItems(prevItems => prevItems.filter(item => item.id !== discardedItemId));
+      setFilteredItems(prevItems => prevItems.filter(item => item.id !== discardedItemId));
+    }
+  });
+};
 
   const updateLocalItems = (newItems) => {
     setPantryItems(newItems);
@@ -255,83 +239,71 @@ export default function PantryScreen({ navigation }) {
   };
 
   const getFoodData = (item) => {
-    const itemName = item.item_name?.toLowerCase() || '';
-   
-    // Debug the image URL
-    if (item.image_url) {
-      debugImageUrl(item);
-    }
-   
-    // For items that don't have preparation time or calories
-    if (itemName.includes('water') || itemName.includes('salt') ||
-        itemName.includes('spice') || itemName.includes('oil')) {
-      return {
-        prep_time: '',
-        calories: '',
-        rating: '4.5',
-        distance: '0 km',
-        description: `${item.item_name} ready for consumption.`
-      };
-    }
+  const itemName = item.item_name?.toLowerCase() || '';
 
-    // Realistic data for common items
-    const foodData = {
-      prep_time: '',
+  // Debug the image URL
+  if (item.image_url) {
+    debugImageUrl(item);
+  }
+
+  // For items that don't have preparation time or calories
+  if (itemName.includes('water') || itemName.includes('salt') ||
+      itemName.includes('spice') || itemName.includes('oil')) {
+    return {
       calories: '',
-      rating: (Math.random() * 0.5 + 4.5).toFixed(1), // Rating between 4.5-5.0
-      distance: (Math.random() * 5).toFixed(1) + ' km',
-      description: `Fresh ${item.item_name?.toLowerCase() || 'item'} ready for preparation.`
+      rating: '4.5',
+      distance: '0 km',
+      description: `${item.item_name} ready for consumption.`
     };
+  }
 
-    // Set preparation time and calories based on item type
-    if (itemName.includes('apple') || itemName.includes('banana') ||
-        itemName.includes('orange') || itemName.includes('grape')) {
-      foodData.prep_time = '0 min';
-      foodData.calories = '80-100 kcal';
-    }
-    else if (itemName.includes('chicken') || itemName.includes('meat')) {
-      foodData.prep_time = '30-45 min';
-      foodData.calories = '200-300 kcal';
-    }
-    else if (itemName.includes('turkey')) {
-      foodData.prep_time = '45-60 min';
-      foodData.calories = '250-350 kcal';
-    }
-    else if (itemName.includes('rice')) {
-      foodData.prep_time = '15-20 min';
-      foodData.calories = '200 kcal/cup';
-    }
-    else if (itemName.includes('pasta')) {
-      foodData.prep_time = '10-12 min';
-      foodData.calories = '220 kcal/serving';
-    }
-    else if (itemName.includes('bread')) {
-      foodData.prep_time = '0 min';
-      foodData.calories = '80 kcal/slice';
-    }
-    else if (itemName.includes('milk')) {
-      foodData.prep_time = '0 min';
-      foodData.calories = '120 kcal/cup';
-    }
-    else if (itemName.includes('egg')) {
-      foodData.prep_time = '5-10 min';
-      foodData.calories = '70 kcal/egg';
-    }
-    else if (itemName.includes('fish')) {
-      foodData.prep_time = '15-25 min';
-      foodData.calories = '150-250 kcal';
-    }
-    else if (itemName.includes('vegetable') || itemName.includes('salad')) {
-      foodData.prep_time = '5-10 min';
-      foodData.calories = '50-100 kcal';
-    }
-    else if (itemName.includes('cheese')) {
-      foodData.prep_time = '0 min';
-      foodData.calories = '110 kcal/oz';
-    }
-
-    return foodData;
+  // Realistic data for common items
+  const foodData = {
+    calories: '',
+    rating: (Math.random() * 0.5 + 4.5).toFixed(1), // Rating between 4.5-5.0
+    distance: (Math.random() * 5).toFixed(1) + ' km',
+    description: `Fresh ${item.item_name?.toLowerCase() || 'item'} ready for preparation.`
   };
+
+  // Set calories based on item type
+  if (itemName.includes('apple') || itemName.includes('banana') ||
+      itemName.includes('orange') || itemName.includes('grape')) {
+    foodData.calories = '80-100 kcal';
+  }
+  else if (itemName.includes('chicken') || itemName.includes('meat')) {
+    foodData.calories = '200-300 kcal';
+  }
+  else if (itemName.includes('turkey')) {
+    foodData.calories = '250-350 kcal';
+  }
+  else if (itemName.includes('rice')) {
+    foodData.calories = '200 kcal/cup';
+  }
+  else if (itemName.includes('pasta')) {
+    foodData.calories = '220 kcal/serving';
+  }
+  else if (itemName.includes('bread')) {
+    foodData.calories = '80 kcal/slice';
+  }
+  else if (itemName.includes('milk')) {
+    foodData.calories = '120 kcal/cup';
+  }
+  else if (itemName.includes('egg')) {
+    foodData.calories = '70 kcal/egg';
+  }
+  else if (itemName.includes('fish')) {
+    foodData.calories = '150-250 kcal';
+  }
+  else if (itemName.includes('vegetable') || itemName.includes('salad')) {
+    foodData.calories = '50-100 kcal';
+  }
+  else if (itemName.includes('cheese')) {
+    foodData.calories = '110 kcal/oz';
+  }
+
+  return foodData;
+};
+
 
   const renderGridItem = ({ item, index }) => {
     const expirationStatus = getExpirationStatus(item.expiration_date);
@@ -367,7 +339,7 @@ export default function PantryScreen({ navigation }) {
           isExpired && styles.gridItemExpired,
           isExpiring && styles.gridItemExpiring
         ]}
-        onPress={() => navigateToFoodDetails({ ...item, ...foodData })}
+        onPress={() => navigateToPantryItemDetails(item)}
         activeOpacity={0.7}
       >
         <View style={styles.gridItemContent}>
@@ -412,13 +384,10 @@ export default function PantryScreen({ navigation }) {
           </Text>
 
           <View style={styles.foodDetails}>
-            {foodData.prep_time ? (
-              <Text style={styles.detailText}>{foodData.prep_time}</Text>
-            ) : <View style={{flex: 1}} />}
-            {foodData.calories ? (
-              <Text style={styles.detailText}>{foodData.calories}</Text>
-            ) : <View style={{flex: 1}} />}
-          </View>
+  {foodData.calories ? (
+    <Text style={styles.detailText}>{foodData.calories}</Text>
+  ) : <View style={{flex: 1}} />}
+</View>
 
           <View style={styles.ratingContainer}>
             <Text style={styles.ratingText}>⭐ {foodData.rating}</Text>

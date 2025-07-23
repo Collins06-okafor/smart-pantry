@@ -35,6 +35,7 @@ import UserListScreen from './screens/UserListScreen';
 import ConversationListScreen from './screens/ConversationListScreen';  
 import OffersScreen from './screens/OffersScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import PantryItemDetailsScreen from './screens/PantryItemDetailsScreen';
 
 
 // --- Add ThemeContext import ---
@@ -184,7 +185,11 @@ export default function App() {
           <Stack.Screen name="Camera" component={CameraScreen} options={{ headerShown: false, presentation: 'modal' }} />
           <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} />
           <Stack.Screen name="BarcodeScannerScreen" component={BarcodeScannerScreen} />
-          <Stack.Screen name="FoodDetails" component={FoodDetailsScreen} />
+          <Stack.Screen 
+  name="PantryItemDetails" 
+  component={PantryItemDetailsScreen} 
+  options={{ headerShown: false }}
+/>
           <Stack.Screen name="ProfileScreen" component={ProfileScreen} />
           <Stack.Screen name="ConversationList" component={ConversationListScreen} />
 <Stack.Screen name="UserList" component={UserListScreen} />

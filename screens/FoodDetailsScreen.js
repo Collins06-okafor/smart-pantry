@@ -19,10 +19,11 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
 import DiscardItemModal from './DiscardItemModal';
+import { uploadFoodImage, deleteFoodImage } from '../utils/uploadFoodImage';
 
 const { width, height } = Dimensions.get('window');
 
-// Helper to get emoji for item name (used in ImageWithFallback)
+// Helper to get emoji for item name
 const getItemEmoji = (name) => {
   if (!name) return '❓';
  
@@ -42,6 +43,7 @@ const getItemEmoji = (name) => {
   if (lower.includes('rice')) return '🍚';
   if (lower.includes('pasta')) return '🍝';
   if (lower.includes('avocado')) return '🥑';
+  if (lower.includes('turkey')) return '🦃';
  
   return '🍽️'; // default
 };
@@ -60,8 +62,9 @@ const foodImages = {
   'chicken': require('../assets/images/chicken.png'),
   'fish': require('../assets/images/fish.png'),
   'rice': require('../assets/images/rice.png'),
-  'pasta': require('../assets/images/pasta.png'),
-  'avocado': require('../assets/images/avocado.png'),
+  //'pasta': require('../assets/images/pasta.png'),
+  //'avocado': require('../assets/images/avocado.png'),
+  //'turkey': require('../assets/images/turkey.png'),
 };
 
 // Options for quantity units
@@ -70,7 +73,7 @@ const UNIT_OPTIONS = [
   'cans', 'bottles', 'boxes', 'bags', 'packs', 'bundles', 'dozen',
 ];
 
-// Image component with fallback logic
+// Improved Image component with better error handling
 const ImageWithFallback = ({
   imageUrl,
   localImage,
@@ -79,41 +82,86 @@ const ImageWithFallback = ({
   onImageError,
   ...props
 }) => {
-  const [currentImageUrl, setCurrentImageUrl] = useState(imageUrl);
-  const [hasError, setHasError] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [imageState, setImageState] = useState({
+    isLoading: false,
+    hasError: false,
+    retryCount: 0
+  });
+ 
+  const maxRetries = 2;
  
   useEffect(() => {
-    setCurrentImageUrl(imageUrl);
-    setHasError(false);
-    setIsLoading(!!imageUrl);
-  }, [imageUrl]);
+    if (imageUrl) {
+      console.log(`Started loading remote image for ${itemName}`);
+      setImageState({
+        isLoading: true,
+        hasError: false,
+        retryCount: 0
+      });
+    } else {
+      setImageState({
+        isLoading: false,
+        hasError: false,
+        retryCount: 0
+      });
+    }
+  }, [imageUrl, itemName]);
 
-  const handleImageError = (error) => {
-    console.log('Image error for:', currentImageUrl, error);
-    setHasError(true);
-    setIsLoading(false);
-    onImageError && onImageError(error);
-  };
+  const handleImageError = useCallback((error) => {
+    console.log(`Remote image load error for ${itemName}:`, error.nativeEvent?.error || 'Unknown error');
+   
+    setImageState(prev => {
+      const newRetryCount = prev.retryCount + 1;
+     
+      if (newRetryCount < maxRetries) {
+        console.log(`Retrying image load for ${itemName} (attempt ${newRetryCount + 1})`);
+        // Force retry by adding timestamp to URL
+        return {
+          isLoading: true,
+          hasError: false,
+          retryCount: newRetryCount
+        };
+      } else {
+        console.log(`Max retries exceeded for ${itemName}, showing fallback`);
+        onImageError && onImageError(error);
+        return {
+          isLoading: false,
+          hasError: true,
+          retryCount: newRetryCount
+        };
+      }
+    });
+  }, [itemName, onImageError, maxRetries]);
 
-  const handleImageLoad = () => {
-    setIsLoading(false);
-  };
+  const handleImageLoad = useCallback(() => {
+    console.log(`Successfully loaded remote image for ${itemName}`);
+    setImageState(prev => ({
+      ...prev,
+      isLoading: false,
+      hasError: false
+    }));
+  }, [itemName]);
 
   // Show loading indicator while image is loading
-  if (isLoading) {
+  if (imageState.isLoading) {
     return (
       <View style={[style, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
         <ActivityIndicator size="large" color="#007AFF" />
+        <Text style={{ fontSize: 12, color: '#666', marginTop: 4 }}>Loading...</Text>
       </View>
     );
   }
 
   // Show remote image if available and no error
-  if (currentImageUrl && !hasError) {
+  if (imageUrl && !imageState.hasError) {
+    // Add retry parameter to force reload on retry
+    const imageUri = imageState.retryCount > 0 ?
+      `${imageUrl}?retry=${imageState.retryCount}&t=${Date.now()}` :
+      imageUrl;
+     
     return (
       <Image
-        source={{ uri: currentImageUrl }}
+        source={{ uri: imageUri }}
         style={style}
         onError={handleImageError}
         onLoad={handleImageLoad}
@@ -159,12 +207,14 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     daysLeft: 30
   };
 
+  // Extract params without non-serializable functions for better navigation handling
   const {
     foodItem = mockFoodItem,
     expirationStatus = mockExpirationStatus,
-    onItemUpdated,
-    onItemDeleted,
-    onItemDiscarded
+    // Store callback IDs instead of functions to avoid serialization warnings
+    onItemUpdatedId,
+    onItemDeletedId,
+    onItemDiscardedId
   } = route.params || {};
 
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -220,8 +270,8 @@ const FoodDetailsScreen = ({ route, navigation }) => {
   const isExpired = expirationStatus.status === 'expired';
   const isExpiring = expirationStatus.status === 'expiring';
  
-  // Fix: Safely get local image with error handling
-  const getLocalImage = (itemName) => {
+  // Safely get local image with error handling
+  const getLocalImage = useCallback((itemName) => {
     if (!itemName) return null;
     try {
       const key = itemName.toLowerCase();
@@ -230,93 +280,41 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       console.log('Error getting local image:', error);
       return null;
     }
-  };
+  }, []);
  
   const localImage = getLocalImage(currentItem.item_name);
 
-  // FIXED: Improved image upload function
-  const uploadFoodItemImage = async (imageUri, userId, itemId) => {
-    if (!imageUri || !userId) {
-      throw new Error('Image URI or User ID missing');
+  // Handle navigation callbacks through navigation params
+  const handleItemUpdated = useCallback((updatedItem) => {
+    if (onItemUpdatedId && navigation.getState().routes) {
+      // Use navigation to pass data back instead of direct callback
+      navigation.setParams({
+        updatedItem,
+        callbackType: 'updated',
+        callbackId: onItemUpdatedId
+      });
     }
+  }, [navigation, onItemUpdatedId]);
 
-    try {
-      console.log('Starting upload for:', imageUri);
-     
-      // Create filename with proper extension
-      const timestamp = Date.now();
-      const fileName = `${userId}_${itemId}_${timestamp}.jpg`;
-
-      // Read the image as blob
-      const response = await fetch(imageUri);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.status}`);
-      }
-
-      const blob = await response.blob();
-      console.log('Blob created, size:', blob.size);
-
-      if (blob.size === 0) {
-        throw new Error('Image file is empty');
-      }
-
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from('pantry-item-images')
-        .upload(fileName, blob, {
-          contentType: 'image/jpeg',
-          upsert: true,
-          cacheControl: '3600'
-        });
-
-      if (error) {
-        console.error('Supabase upload error:', error);
-        throw new Error(`Upload failed: ${error.message}`);
-      }
-
-      console.log('Upload successful:', data);
-
-      // Get public URL
-      const { data: publicUrlData } = supabase.storage
-        .from('pantry-item-images')
-        .getPublicUrl(fileName);
-
-      if (!publicUrlData?.publicUrl) {
-        throw new Error('Failed to generate public URL');
-      }
-
-      console.log('Public URL generated:', publicUrlData.publicUrl);
-      return publicUrlData.publicUrl;
-
-    } catch (error) {
-      console.error('uploadFoodItemImage error:', error);
-      throw error;
+  const handleItemDeleted = useCallback((itemId) => {
+    if (onItemDeletedId && navigation.getState().routes) {
+      navigation.setParams({
+        deletedItemId: itemId,
+        callbackType: 'deleted',
+        callbackId: onItemDeletedId
+      });
     }
-  };
+  }, [navigation, onItemDeletedId]);
 
-  const deleteOldFoodImage = async (imageUrl) => {
-    if (!imageUrl || imageUrl.startsWith('file://')) return;
-
-    try {
-      // Extract filename from URL
-      const urlParts = imageUrl.split('/');
-      const fileName = urlParts[urlParts.length - 1].split('?')[0];
-     
-      if (fileName) {
-        const { error } = await supabase.storage
-          .from('pantry-item-images')
-          .remove([fileName]);
-
-        if (error) {
-          console.error('Error deleting old image:', error);
-        } else {
-          console.log('Old image deleted successfully:', fileName);
-        }
-      }
-    } catch (error) {
-      console.log('Error in deleteOldFoodImage:', error);
+  const handleItemDiscarded = useCallback((itemId) => {
+    if (onItemDiscardedId && navigation.getState().routes) {
+      navigation.setParams({
+        discardedItemId: itemId,
+        callbackType: 'discarded',
+        callbackId: onItemDiscardedId
+      });
     }
-  };
+  }, [navigation, onItemDiscardedId]);
 
   const checkNetworkConnection = async () => {
     return true;
@@ -412,7 +410,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     }
   };
 
-  // FIXED: Improved image selection handler
+  // Improved image selection handler with better error handling
   const handleImageSelection = async (imageAsset) => {
     console.log('Starting image selection...', imageAsset);
    
@@ -431,23 +429,30 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     try {
       // Set the selected image immediately for preview
       setSelectedImageUri(imageAsset.uri);
-      updateEditedItem('image_url', imageAsset.uri); // Show preview immediately
+      updateEditedItem('image_url', imageAsset.uri);
      
       console.log('Uploading image...');
-      const publicUrl = await uploadFoodItemImage(imageAsset.uri, userId, currentItem.id);
+      // Use the uploadFoodImage utility function
+      const publicUrl = await uploadFoodImage(imageAsset.uri, userId);
       console.log('Image uploaded successfully:', publicUrl);
      
       // Delete old image if it exists and is different
       if (currentItem.image_url &&
           currentItem.image_url !== publicUrl &&
-          !currentItem.image_url.startsWith('file://')) {
+          !currentItem.image_url.startsWith('file://') &&
+          !currentItem.image_url.startsWith('https://picsum.photos')) { // Don't delete demo images
         console.log('Deleting old image...');
-        await deleteOldFoodImage(currentItem.image_url);
+        try {
+          await deleteFoodImage(currentItem.image_url);
+        } catch (deleteError) {
+          console.warn('Failed to delete old image:', deleteError);
+          // Continue anyway - this is not critical
+        }
       }
 
       // Update with the public URL
       updateEditedItem('image_url', publicUrl);
-      setSelectedImageUri(null); // Clear selected URI since we now have public URL
+      setSelectedImageUri(null);
      
       Alert.alert('Success', 'Image uploaded successfully!');
      
@@ -462,9 +467,11 @@ const FoodDetailsScreen = ({ route, navigation }) => {
         errorMessage = 'Network error. Please check your connection and try again.';
       } else if (error.message.includes('size')) {
         errorMessage = 'Image file is too large. Please choose a smaller image.';
+      } else if (error.message.includes('storage')) {
+        errorMessage = 'Storage error. Please check your permissions and try again.';
       }
      
-      Alert.alert('Error', errorMessage);
+      Alert.alert('Upload Error', errorMessage);
     } finally {
       setIsUploadingImage(false);
     }
@@ -486,8 +493,14 @@ const FoodDetailsScreen = ({ route, navigation }) => {
             }
 
             try {
-              if (item.image_url) {
-                await deleteOldFoodImage(item.image_url);
+              if (item.image_url &&
+                  !item.image_url.startsWith('https://picsum.photos')) { // Don't delete demo images
+                try {
+                  await deleteFoodImage(item.image_url);
+                } catch (deleteError) {
+                  console.warn('Failed to delete image during item deletion:', deleteError);
+                  // Continue with item deletion even if image deletion fails
+                }
               }
 
               const { error } = await supabase
@@ -498,9 +511,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
 
               if (error) throw error;
              
-              if (onItemDeleted) {
-                onItemDeleted(item.id);
-              }
+              handleItemDeleted(item.id);
              
               Alert.alert(
                 'Item Deleted',
@@ -541,10 +552,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
   const handleDiscardComplete = () => {
     console.log('Discard complete, navigating back.');
    
-    if (onItemDiscarded) {
-      onItemDiscarded(currentItem.id);
-    }
-   
+    handleItemDiscarded(currentItem.id);
     navigation.goBack();
   };
 
@@ -555,7 +563,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     }));
   }, []);
 
-  // FIXED: Improved save function
+  // Improved save function with better error handling
   const handleSaveEdit = async () => {
     const isConnected = await checkNetworkConnection();
     if (!isConnected) {
@@ -596,25 +604,28 @@ const FoodDetailsScreen = ({ route, navigation }) => {
     setIsSaving(true);
 
     try {
-      // FIXED: Properly handle image_url - use the current value from editedItem
       let finalImageUrl = editedItem.image_url;
      
       // If there's a selected image URI that hasn't been uploaded yet, upload it now
       if (selectedImageUri && selectedImageUri !== editedItem.image_url) {
         try {
           console.log('Uploading final image...');
-          finalImageUrl = await uploadFoodItemImage(selectedImageUri, userId, currentItem.id);
+          finalImageUrl = await uploadFoodImage(selectedImageUri, userId);
           console.log('Final image uploaded:', finalImageUrl);
          
           // Delete old image if different
           if (currentItem.image_url &&
               currentItem.image_url !== finalImageUrl &&
-              !currentItem.image_url.startsWith('file://')) {
-            await deleteOldFoodImage(currentItem.image_url);
+              !currentItem.image_url.startsWith('file://') &&
+              !currentItem.image_url.startsWith('https://picsum.photos')) {
+            try {
+              await deleteFoodImage(currentItem.image_url);
+            } catch (deleteError) {
+              console.warn('Failed to delete old image:', deleteError);
+            }
           }
         } catch (uploadError) {
           console.error('Error uploading final image:', uploadError);
-          // Continue with save but use original image URL
           finalImageUrl = currentItem.image_url || '';
           Alert.alert('Warning', 'Image upload failed, but item will be saved with previous image.');
         }
@@ -626,7 +637,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
         quantity_unit: editedItem.unit.trim(),
         expiration_date: editedItem.expiration_date.trim() || null,
         description: editedItem.description.trim(),
-        image_url: finalImageUrl, // FIXED: Use the properly handled image URL
+        image_url: finalImageUrl,
         updated_at: new Date().toISOString()
       };
 
@@ -648,13 +659,10 @@ const FoodDetailsScreen = ({ route, navigation }) => {
       };
 
       setCurrentItem(newCurrentItem);
-
-      if (onItemUpdated) {
-        onItemUpdated(newCurrentItem);
-      }
+      handleItemUpdated(newCurrentItem);
 
       setIsEditModalVisible(false);
-      setSelectedImageUri(null); // Clear selected image URI
+      setSelectedImageUri(null);
 
       setTimeout(() => {
         Alert.alert('Success', 'Item updated successfully!');
@@ -673,7 +681,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
         errorMessage = 'Network error. Please check your connection.';
       }
 
-      Alert.alert('Error', errorMessage);
+      Alert.alert('Save Error', errorMessage);
     } finally {
       setIsSaving(false);
     }
@@ -935,7 +943,7 @@ const FoodDetailsScreen = ({ route, navigation }) => {
                 itemName={currentItem.item_name}
                 style={styles.foodImage}
                 onImageError={() => {
-                  console.log('Image error in main view, clearing image_url');
+                  console.log('Image error in main view, clearing image_url for', currentItem.item_name);
                   setCurrentItem(prev => ({ ...prev, image_url: '' }));
                 }}
                 resizeMode="cover"
